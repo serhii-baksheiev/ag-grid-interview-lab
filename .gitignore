@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.claude/queue.state.json
+.claude/queue.board
+.claude/gate-rounds.json
+.claude/worktrees/
+.claude/runs/
