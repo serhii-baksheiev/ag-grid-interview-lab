@@ -1,0 +1,135 @@
+@media (max-width: 1250px) {
+  .app .sidebar {
+    width: 205px;
+  }
+  .app .workspace {
+    margin-left: 205px;
+    width: calc(100% - 205px);
+  }
+  .app .workspace main {
+    padding: 24px;
+  }
+  .app .metric {
+    padding: 16px;
+  }
+  .app .metric small {
+    font-size: 9px;
+  }
+  .app .toolbar {
+    gap: 12px;
+  }
+  .app .toolbar-end {
+    margin-left: 0;
+  }
+  .app .grid-footer {
+    flex-wrap: wrap;
+  }
+  .app .info-panel {
+    gap: 18px;
+  }
+}
+@media (max-width: 900px) {
+  .app .sidebar {
+    position: static;
+    width: 100%;
+    padding: 16px;
+  }
+  .app {
+    display: block;
+  }
+  .app .brand {
+    padding: 0 0 14px;
+  }
+  .app .sidebar nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .app .sidebar nav button {
+    flex-shrink: 0;
+  }
+  .app .sidebar nav small,
+  .app .nav-caption,
+  .app .sidebar-bottom,
+  .app .nav-indicator {
+    display: none;
+  }
+  .app .workspace {
+    margin-left: 0;
+    width: 100%;
+  }
+  .app .topbar {
+    height: 54px;
+    padding: 0 20px;
+  }
+  .app .workspace main {
+    padding: 20px;
+  }
+  .app .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .app .guide-cards {
+    grid-template-columns: 1fr;
+  }
+  .app .feature-heading {
+    align-items: flex-start;
+  }
+  .app .feature-heading h1 {
+    font-size: 26px;
+  }
+  .app .info-panel p {
+    max-width: none;
+  }
+  .app .app-footer {
+    padding: 16px 20px;
+  }
+}
+@media (max-width: 520px) {
+  .app .workspace main {
+    padding: 14px;
+  }
+  .app .feature-heading {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .app .topbar > div {
+    gap: 8px;
+  }
+  .app .topbar {
+    padding: 0 14px;
+  }
+  .app .seed-badge {
+    display: none;
+  }
+  .app .metrics {
+    gap: 10px;
+  }
+  .app .metric {
+    padding: 13px;
+  }
+  .app .metric strong {
+    font-size: 25px;
+  }
+  .app .metric small {
+    line-height: 1.5;
+    display: block;
+  }
+  .app .toolbar,
+  .app .grid-toolbar {
+    padding: 12px;
+    gap: 12px;
+  }
+  .app .toolbar label {
+    flex: 1;
+    min-width: 110px;
+  }
+  .app .search input {
+    width: 210px;
+  }
+  .app .info-panel {
+    gap: 14px;
+  }
+  .app .app-footer {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
