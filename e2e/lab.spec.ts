@@ -271,7 +271,15 @@ test('filters historical logs and retries a failed request', async ({
     page.getByText('No rows to show', { exact: true }),
   ).toBeVisible();
   await page.getByLabel('Device filter', { exact: true }).fill('');
-  await expect(page.getByRole('gridcell').first()).toBeVisible();
+  await expect(page.locator('[row-index="0"] [col-id="deviceId"]')).toHaveText(
+    /^device-\d+$/,
+  );
+  await expect(
+    page
+      .getByText('Pending requests', { exact: true })
+      .locator('..')
+      .locator('strong'),
+  ).toHaveText('0');
   await page.getByLabel('Simulate request error', { exact: true }).check();
   await expect(
     page.getByRole('button', { name: 'Retry', exact: true }),
@@ -285,7 +293,9 @@ test('filters historical logs and retries a failed request', async ({
   ).toHaveText('0');
   await page.getByLabel('Simulate request error', { exact: true }).uncheck();
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByRole('gridcell').first()).toBeVisible();
+  await expect(page.locator('[row-index="0"] [col-id="deviceId"]')).toHaveText(
+    /^device-\d+$/,
+  );
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
