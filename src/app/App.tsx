@@ -52,7 +52,7 @@ export function App() {
   });
   return (
     <div
-      className={`app ${dark ? 'dark' : ''}`}
+      className={`app ag-theme-mode ${dark ? 'dark' : ''}`}
       data-ag-theme-mode={dark ? 'dark' : 'light'}
     >
       <a className="skip-link" href="#main-content">
@@ -133,78 +133,87 @@ export function App() {
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>
-          <ErrorBoundary>
-            {view === 'live' && <LiveTelemetry />}
-            {view === 'history' && <HistoricalLogs />}
-            {view === 'analytics' && <Analytics />}
-            {configVisited && (
-              <div hidden={view !== 'configuration'}>
+          {view === 'live' && (
+            <ErrorBoundary storageKey="iot-lab:v1:live">
+              <LiveTelemetry />
+            </ErrorBoundary>
+          )}
+          {view === 'history' && (
+            <ErrorBoundary storageKey="iot-lab:v1:history">
+              <HistoricalLogs />
+            </ErrorBoundary>
+          )}
+          {view === 'analytics' && (
+            <ErrorBoundary storageKey="iot-lab:v1:analytics">
+              <Analytics />
+            </ErrorBoundary>
+          )}
+          {configVisited && (
+            <div hidden={view !== 'configuration'}>
+              <ErrorBoundary storageKey="iot-lab:v1:configuration">
                 <DeviceConfiguration />
+              </ErrorBoundary>
+            </div>
+          )}
+          {view === 'guide' && (
+            <section>
+              <div className="feature-heading">
+                <div>
+                  <p className="eyebrow">THE INTERVIEW TOOLKIT</p>
+                  <h1>Explain the architecture.</h1>
+                  <p>
+                    Use the console to turn API knowledge into a working
+                    demonstration.
+                  </p>
+                </div>
               </div>
-            )}
-            {view === 'guide' && (
-              <section>
-                <div className="feature-heading">
-                  <div>
-                    <p className="eyebrow">THE INTERVIEW TOOLKIT</p>
-                    <h1>Explain the architecture.</h1>
-                    <p>
-                      Use the console to turn API knowledge into a working
-                      demonstration.
-                    </p>
-                  </div>
-                </div>
-                <div className="guide-cards">
-                  <article className="panel">
-                    <span className="step-number">01</span>
-                    <h2>Follow a live update</h2>
-                    <p>
-                      Open{' '}
-                      <code>features/live-telemetry/LiveTelemetry.tsx</code>.
-                      Follow a seeded measurement through a stable row ID into
-                      an async transaction. Why does the component avoid setting
-                      rowData on each tick?
-                    </p>
-                  </article>
-                  <article className="panel">
-                    <span className="step-number">02</span>
-                    <h2>Trace a historical query</h2>
-                    <p>
-                      Open the request inspector. Change a filter and watch
-                      block loading. Explain why filtering must happen before
-                      pagination and how cancelled requests differ from parallel
-                      requests.
-                    </p>
-                  </article>
-                  <article className="panel">
-                    <span className="step-number">03</span>
-                    <h2>Make an edit safe</h2>
-                    <p>
-                      Edit a threshold, simulate a failed save, then revert.
-                      Explain parser, validator, setter, draft and saved
-                      baseline as separate responsibilities.
-                    </p>
-                  </article>
-                </div>
-                <div className="panel guide-reading">
-                  <h2>Your study materials</h2>
+              <div className="guide-cards">
+                <article className="panel">
+                  <span className="step-number">01</span>
+                  <h2>Follow a live update</h2>
                   <p>
-                    Read the local <code>docs/INTERVIEW_NOTES_RU.md</code> for
-                    detailed Russian explanations,{' '}
-                    <code>docs/INTERVIEW_PHRASES_EN.md</code> for spoken
-                    English, and <code>docs/LIVE_CODING_TASKS.md</code> for ten
-                    exercises.
+                    Open <code>features/live-telemetry/LiveTelemetry.tsx</code>.
+                    Follow a seeded measurement through a stable row ID into an
+                    async transaction. Why does the component avoid setting
+                    rowData on each tick?
                   </p>
+                </article>
+                <article className="panel">
+                  <span className="step-number">02</span>
+                  <h2>Trace a historical query</h2>
                   <p>
-                    Keyboard: Tab into the grid, arrow keys to navigate, Enter
-                    or F2 to edit, Escape to cancel. Native multi-cell clipboard
-                    and pivot require Enterprise. This application uses no
-                    licence key.
+                    Open the request inspector. Change a filter and watch block
+                    loading. Explain why filtering must happen before pagination
+                    and how cancelled requests differ from parallel requests.
                   </p>
-                </div>
-              </section>
-            )}
-          </ErrorBoundary>
+                </article>
+                <article className="panel">
+                  <span className="step-number">03</span>
+                  <h2>Make an edit safe</h2>
+                  <p>
+                    Edit a threshold, simulate a failed save, then revert.
+                    Explain parser, validator, setter, draft and saved baseline
+                    as separate responsibilities.
+                  </p>
+                </article>
+              </div>
+              <div className="panel guide-reading">
+                <h2>Your study materials</h2>
+                <p>
+                  Read the local <code>docs/INTERVIEW_NOTES_RU.md</code> for
+                  detailed Russian explanations,{' '}
+                  <code>docs/INTERVIEW_PHRASES_EN.md</code> for spoken English,
+                  and <code>docs/LIVE_CODING_TASKS.md</code> for ten exercises.
+                </p>
+                <p>
+                  Keyboard: Tab into the grid, arrow keys to navigate, Enter or
+                  F2 to edit, Escape to cancel. Native multi-cell clipboard and
+                  pivot require Enterprise. This application uses no licence
+                  key.
+                </p>
+              </div>
+            </section>
+          )}
         </main>
         <footer className="app-footer">
           <span>AG Grid IoT Interview Lab</span>

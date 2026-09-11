@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GridApi, IGetRowsParams } from 'ag-grid-community';
 import { createHistoryDatasource } from './datasource';
+import * as queryEngine from './query';
 import { telemetryAt } from '../../shared/data/generator';
 
 function request(
   startRow = 0,
   filterModel: Record<string, unknown> = {},
+  sortModel: IGetRowsParams['sortModel'] = [],
 ): IGetRowsParams {
   // The datasource contract does not read Grid API; supply only its request callbacks.
   return {
@@ -13,14 +15,17 @@ function request(
     startRow,
     endRow: startRow + 10,
     filterModel,
-    sortModel: [],
+    sortModel,
     context: undefined,
     successCallback: vi.fn(),
     failCallback: vi.fn(),
   };
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('asynchronous historical datasource', () => {
   it('delivers parallel blocks independently', async () => {
@@ -68,7 +73,7 @@ describe('asynchronous historical datasource', () => {
     source.getRows(current);
     await vi.runAllTimersAsync();
     expect(old.successCallback).not.toHaveBeenCalled();
-    expect(old.failCallback).not.toHaveBeenCalled();
+    expect(old.failCallback).toHaveBeenCalledOnce();
     expect(current.successCallback).toHaveBeenCalledWith([], 0);
     source.destroy?.();
   });
@@ -89,7 +94,7 @@ describe('asynchronous historical datasource', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(onStatus).not.toHaveBeenCalled();
     expect(pending.successCallback).not.toHaveBeenCalled();
-    expect(pending.failCallback).not.toHaveBeenCalled();
+    expect(pending.failCallback).toHaveBeenCalledOnce();
   });
   it('retries a failed block without losing the query', async () => {
     vi.useFakeTimers();
@@ -109,6 +114,117 @@ describe('asynchronous historical datasource', () => {
     source.getRows(retry);
     await vi.runAllTimersAsync();
     expect(retry.successCallback).toHaveBeenCalledOnce();
+    source.destroy?.();
+  });
+  it('settles every request once when a filter, sort, and datasource size replace pending work', async () => {
+    vi.useFakeTimers();
+    const retired = createHistoryDatasource({
+      total: 100,
+      latency: 500,
+      fail: () => false,
+      onStatus: vi.fn(),
+    });
+    const unfiltered = request();
+    const filtered = request(0, {
+      deviceId: { filterType: 'text', type: 'contains', filter: 'device-0' },
+    });
+    const sorted = request(0, {}, [{ colId: 'value', sort: 'desc' }]);
+    retired.getRows(unfiltered);
+    retired.getRows(filtered);
+    retired.getRows(sorted);
+    retired.destroy?.();
+
+    const replacement = createHistoryDatasource({
+      total: 10,
+      latency: 0,
+      fail: () => false,
+      onStatus: vi.fn(),
+    });
+    const firstBlockForNewSize = request();
+    replacement.getRows(firstBlockForNewSize);
+    await vi.runAllTimersAsync();
+
+    for (const params of [unfiltered, filtered, sorted, firstBlockForNewSize]) {
+      expect(
+        vi.mocked(params.successCallback).mock.calls.length +
+          vi.mocked(params.failCallback).mock.calls.length,
+      ).toBe(1);
+    }
+    expect(unfiltered.successCallback).not.toHaveBeenCalled();
+    expect(filtered.successCallback).not.toHaveBeenCalled();
+    expect(sorted.successCallback).not.toHaveBeenCalled();
+    expect(firstBlockForNewSize.successCallback).toHaveBeenCalledWith(
+      Array.from({ length: 10 }, (_, i) => telemetryAt(i)),
+      10,
+    );
+    replacement.destroy?.();
+  });
+  it('settles calls queued after destruction exactly once', () => {
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => false,
+      onStatus: vi.fn(),
+    });
+    source.destroy?.();
+    const late = request();
+    source.getRows(late);
+    source.destroy?.();
+    expect(late.failCallback).toHaveBeenCalledOnce();
+    expect(late.successCallback).not.toHaveBeenCalled();
+  });
+  it('cancels an index in flight without applying its eventual rows', async () => {
+    vi.useFakeTimers();
+    let resolveIndex!: (value: queryEngine.HistoryIndex) => void;
+    vi.spyOn(queryEngine, 'prepareHistory').mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveIndex = resolve;
+        }),
+    );
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => false,
+      onStatus,
+    });
+    const old = request(0, {}, [{ colId: 'value', sort: 'asc' }]);
+    source.getRows(old);
+    await vi.advanceTimersByTimeAsync(0);
+    const current = request();
+    source.getRows(current);
+    expect(old.failCallback).toHaveBeenCalledOnce();
+    resolveIndex({ indices: null, total: 100 });
+    await vi.runAllTimersAsync();
+    expect(old.successCallback).not.toHaveBeenCalled();
+    expect(old.failCallback).toHaveBeenCalledOnce();
+    expect(current.successCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0].pending).toBe(0);
+    source.destroy?.();
+  });
+  it('reads latency for each block while retaining the prepared query index', async () => {
+    vi.useFakeTimers();
+    let latency = 20;
+    const prepare = vi.spyOn(queryEngine, 'prepareHistory');
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: () => latency,
+      fail: () => false,
+      onStatus: vi.fn(),
+    });
+    const first = request();
+    source.getRows(first);
+    latency = 200;
+    await vi.advanceTimersByTimeAsync(20);
+    expect(first.successCallback).toHaveBeenCalledOnce();
+    const second = request(10);
+    source.getRows(second);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(second.successCallback).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(second.successCallback).toHaveBeenCalledOnce();
+    expect(prepare).toHaveBeenCalledOnce();
     source.destroy?.();
   });
 });

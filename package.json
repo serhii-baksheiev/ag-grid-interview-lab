@@ -2,6 +2,13 @@
   "name": "ag-grid-iot-interview-lab",
   "private": true,
   "version": "1.0.0",
+  "description": "A React and TypeScript AG Grid lab for streaming IoT telemetry, large datasets, spreadsheet-style editing and interview practice.",
+  "license": "MIT",
+  "author": "Serhii Baksheiev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/serhii-baksheiev/ag-grid-interview-lab.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -12,8 +19,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b",
     "lint": "eslint src e2e *.ts *.js",
-    "format": "prettier --write src e2e docs/*.md README.md package.json *.ts *.js index.html",
-    "format:check": "prettier --check src e2e docs/*.md README.md package.json *.ts *.js index.html",
+    "format": "prettier --write src e2e scripts docs/*.md docs/audits/REMEDIATION.md .github/workflows/ci.yml README.md package.json *.ts *.js index.html",
+    "format:check": "prettier --check src e2e scripts docs/*.md docs/audits/REMEDIATION.md .github/workflows/ci.yml README.md package.json *.ts *.js index.html",
     "test": "vitest run",
     "test:unit": "vitest run --exclude '**/*.integration.test.tsx'",
     "test:integration": "vitest run src/app",
@@ -26,6 +33,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "7.0.1",

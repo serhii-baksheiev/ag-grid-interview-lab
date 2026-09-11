@@ -31,6 +31,16 @@ describe('deterministic IoT data', () => {
     ).toBe(true);
     expect(generateDevices(0)).toEqual([]);
   });
+  it.each([
+    ['below warning', 34.999, 'normal'],
+    ['at warning', 35, 'warning'],
+    ['above warning', 35.001, 'warning'],
+    ['below critical', 41.999, 'warning'],
+    ['at critical', 42, 'critical'],
+    ['above critical', 42.001, 'critical'],
+  ] as const)('classifies temperature %s at %s', (_, value, expected) => {
+    expect(statusFor(value, 35, 42)).toBe(expected);
+  });
   it('can directly address a historical row without generating its predecessors', () => {
     const row = telemetryAt(499_999, 42);
     expect(row).toEqual(telemetryAt(499_999, 42));

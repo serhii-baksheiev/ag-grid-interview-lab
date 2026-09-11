@@ -25,14 +25,14 @@ export default function HistoricalLogs() {
   const [device, setDevice] = useState('');
   const [position, setPosition] = useState(50);
   const [status, setStatus] = useState(initialStatus);
-  const [requestError, setRequestError] = useState(false);
   const onStatus = useCallback((next: DatasourceStatus) => {
     setStatus(next);
-    if (next.error) setRequestError(true);
   }, []);
   const api = useRef<GridApi<Telemetry> | null>(null);
   const [readyApi, setReadyApi] = useState<GridApi<Telemetry>>();
   const failRef = useRef(false);
+  const latencyRef = useRef(latency);
+  const pendingDeviceInput = useRef(false);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -82,6 +82,7 @@ export default function HistoricalLogs() {
     [],
   );
   const onGridReady = useCallback((event: GridReadyEvent<Telemetry>) => {
+    event.api.setGridAriaProperty('label', 'Historical measurements grid');
     api.current = event.api;
     setReadyApi(event.api);
   }, []);
@@ -89,13 +90,13 @@ export default function HistoricalLogs() {
     if (!readyApi || readyApi.isDestroyed()) return;
     const datasource = createHistoryDatasource({
       total,
-      latency,
+      latency: () => latencyRef.current,
       fail: () => failRef.current,
       onStatus,
     });
     readyApi.setGridOption('datasource', datasource);
     return () => datasource.destroy?.();
-  }, [readyApi, total, latency, onStatus]);
+  }, [readyApi, total, onStatus]);
   useEffect(
     () => () => {
       clearTimeout(filterTimer.current);
@@ -104,11 +105,13 @@ export default function HistoricalLogs() {
     [],
   );
   const filterDevice = (value: string) => {
+    pendingDeviceInput.current = true;
     setDevice(value);
     clearTimeout(filterTimer.current);
     filterTimer.current = setTimeout(() => {
       const grid = api.current;
       if (!grid || grid.isDestroyed()) return;
+      pendingDeviceInput.current = false;
       grid.setFilterModel({
         ...grid.getFilterModel(),
         deviceId: value
@@ -119,6 +122,7 @@ export default function HistoricalLogs() {
   };
   const reset = () => {
     clearTimeout(filterTimer.current);
+    pendingDeviceInput.current = false;
     setDevice('');
     if (api.current) state.resetState(api.current);
   };
@@ -147,7 +151,10 @@ export default function HistoricalLogs() {
           <select
             aria-label="Dataset size"
             value={total}
-            onChange={(event) => setTotal(Number(event.target.value))}
+            onChange={(event) => {
+              setStatus(initialStatus);
+              setTotal(Number(event.target.value));
+            }}
           >
             {[10000, 100000, 500000].map((count) => (
               <option key={count} value={count}>
@@ -161,7 +168,10 @@ export default function HistoricalLogs() {
           <select
             aria-label="Network latency"
             value={latency}
-            onChange={(event) => setLatency(Number(event.target.value))}
+            onChange={(event) => {
+              latencyRef.current = Number(event.target.value);
+              setLatency(latencyRef.current);
+            }}
           >
             {[0, 250, 750, 1500].map((ms) => (
               <option key={ms} value={ms}>
@@ -196,7 +206,16 @@ export default function HistoricalLogs() {
         </button>
         <button onClick={reset}>Reset State</button>
       </div>
-      <div className="metrics" aria-live="polite">
+      <p className="sr-only" role="status" aria-atomic="true">
+        {status.error
+          ? 'Historical request failed.'
+          : status.pending
+            ? 'Loading historical records.'
+            : status.total === undefined
+              ? ''
+              : `Historical records loaded. ${status.total} matching records.`}
+      </p>
+      <div className="metrics">
         <div className="metric">
           <span>Matching records</span>
           <strong>
@@ -212,12 +231,11 @@ export default function HistoricalLogs() {
           <strong>≤ 1,600 rows</strong>
         </div>
       </div>
-      {requestError && (
+      {status.error && (
         <div className="notice error" role="alert">
           Historical request failed. Disable error simulation and retry.{' '}
           <button
             onClick={() => {
-              setRequestError(false);
               api.current?.purgeInfiniteCache();
             }}
           >
@@ -248,6 +266,14 @@ export default function HistoricalLogs() {
           initialState={state.initialState}
           onStateUpdated={(event) => {
             state.onStateUpdated(event);
+            if (
+              pendingDeviceInput.current ||
+              !event.sources.some(
+                (source) =>
+                  source === 'filter' || source === 'gridInitializing',
+              )
+            )
+              return;
             const model = event.api.getFilterModel().deviceId as
               { filter?: unknown } | undefined;
             setDevice(typeof model?.filter === 'string' ? model.filter : '');

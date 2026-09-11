@@ -17,67 +17,102 @@ export interface DatasourceStatus {
 }
 export function createHistoryDatasource(options: {
   total: number;
-  latency: number;
+  latency: number | (() => number);
   fail: () => boolean;
   onStatus: (status: DatasourceStatus) => void;
 }): IDatasource {
   let destroyed = false,
     signature = '',
     generation = 0,
-    sequence = 0,
-    pending = 0;
+    sequence = 0;
   let controller = new AbortController();
   let index: Promise<HistoryIndex> | undefined;
   let entries: RequestEntry[] = [];
   let failed = false,
     matchedTotal: number | undefined;
-  const timers = new Map<ReturnType<typeof setTimeout>, () => void>();
+  const active = new Set<() => void>();
   const emit = () => {
     if (!destroyed)
       options.onStatus({
-        pending,
+        pending: active.size,
         error: failed,
         total: matchedTotal,
-        requests: [...entries],
+        requests: entries.map((entry) => ({ ...entry })),
       });
   };
-  const delay = () =>
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        resolve();
-      }, options.latency);
-      timers.set(timer, resolve);
-    });
+  const cancelAll = () => {
+    controller.abort();
+    for (const cancel of [...active]) cancel();
+  };
   return {
     getRows(params: IGetRowsParams<ReturnType<typeof telemetryAt>>) {
+      // Even requests queued by the grid before destroy must release its loader slot.
+      if (destroyed) {
+        params.failCallback();
+        return;
+      }
       const query = JSON.stringify([params.filterModel, params.sortModel]);
       if (signature !== query) {
         signature = query;
         generation++;
-        controller.abort();
+        cancelAll();
         controller = new AbortController();
         index = undefined;
         failed = false;
         matchedTotal = undefined;
       }
       const current = generation,
-        id = ++sequence,
         started = performance.now();
       const entry: RequestEntry = {
-        id,
-        range: `${params.startRow}–${params.endRow}`,
+        id: ++sequence,
+        range: `[${params.startRow}-${params.endRow})`,
         query,
         status: 'loading',
       };
       entries = [entry, ...entries].slice(0, 8);
-      pending++;
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let releaseDelay: (() => void) | undefined;
+      const finish = (
+        status: RequestEntry['status'],
+        page?: ReturnType<typeof historyPage>,
+      ) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        releaseDelay?.();
+        active.delete(cancel);
+        entry.status = status;
+        entry.duration = Math.round(performance.now() - started);
+        if (status === 'success' && page) {
+          matchedTotal = page.total;
+          failed = false;
+        } else if (status === 'error') failed = true;
+        try {
+          if (status === 'success' && page)
+            params.successCallback(page.rows, page.total);
+          else params.failCallback();
+        } finally {
+          emit();
+        }
+      };
+      const cancel = () => finish('cancelled');
+      active.add(cancel);
       emit();
       const execute = async () => {
         try {
-          await delay();
+          await new Promise<void>((resolve) => {
+            releaseDelay = resolve;
+            timer = setTimeout(
+              resolve,
+              typeof options.latency === 'function'
+                ? options.latency()
+                : options.latency,
+            );
+          });
+          if (settled) return;
           if (destroyed || current !== generation) {
-            entry.status = 'cancelled';
+            cancel();
             return;
           }
           if (options.fail()) throw new Error('Simulated request failure');
@@ -90,40 +125,31 @@ export function createHistoryDatasource(options: {
             signal: controller.signal,
           });
           const prepared = await index;
+          if (settled) return;
           if (destroyed || current !== generation) {
-            entry.status = 'cancelled';
+            cancel();
             return;
           }
-          const page = historyPage(prepared, params.startRow, params.endRow);
-          matchedTotal = page.total;
-          failed = false;
-          entry.status = 'success';
-          params.successCallback(page.rows, page.total);
+          finish(
+            'success',
+            historyPage(prepared, params.startRow, params.endRow),
+          );
         } catch {
+          if (settled) return;
           if (destroyed || current !== generation) {
-            entry.status = 'cancelled';
+            cancel();
             return;
           }
-          failed = true;
-          entry.status = 'error';
           index = undefined;
-          params.failCallback();
-        } finally {
-          pending--;
-          entry.duration = Math.round(performance.now() - started);
-          emit();
+          finish('error');
         }
       };
       void execute();
     },
     destroy() {
       destroyed = true;
-      controller.abort();
-      for (const [timer, resolve] of timers) {
-        clearTimeout(timer);
-        resolve();
-      }
-      timers.clear();
+      cancelAll();
+      index = undefined;
     },
   };
 }

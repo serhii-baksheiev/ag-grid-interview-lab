@@ -24,7 +24,7 @@ Practice in a disposable local branch. Hide only the relevant solution while pra
 
 **Trade-off:** rounding the stored value changes data; formatting does not. Locale formatting should not become an accidental input parser.
 
-**Hide before practice:** `formatNumber` in `src/shared/utils/format.ts` and its invocation in one column, keeping tests visible as acceptance criteria.
+**Hide before practice:** replace only the body of exported `formatNumber` in `src/shared/utils/format.ts` with `return numberFormat.format(value ?? 0)`. This intentionally mishandles empty/non-finite input while keeping the cached formatter in use. Keep the export, signature and every column invocation intact so the application still starts. Run `npm run typecheck`, restore the formatter using its tests, then sort Value to verify numeric ordering.
 
 ## 3. Render status accessibly — 10 minutes
 
@@ -36,7 +36,7 @@ Practice in a disposable local branch. Hide only the relevant solution while pra
 
 **Trade-off:** keep the React renderer small and stateless; avoid fetches or state subscriptions in every cell. A JavaScript class renderer with `init` and `getGui` is an alternative only if profiling justifies the extra lifecycle code.
 
-**Hide before practice:** `statusRenderer` in `src/shared/grid/base.ts`; keep status CSS classes and domain union available.
+**Hide before practice:** replace only the body of exported `statusRenderer` in `src/shared/grid/base.ts` with `return createElement('span', null, params.value ?? 'offline')`. This keeps the React import used while removing the badge styling. Keep its signature, imports and column references intact. Run `npm run typecheck`; restore the text badge, then inspect the Live and Analytics status cells.
 
 ## 4. Add a historical filter — 12 minutes
 
@@ -48,7 +48,7 @@ Practice in a disposable local branch. Hide only the relevant solution while pra
 
 **Trade-off:** the Infinite grid does not have the full dataset for Quick Filter. Too much debounce feels slow; too little creates wasted query work.
 
-**Hide before practice:** the Device filter handler in `src/features/historical-logs/HistoricalLogs.tsx`, or only the text-equals branch in `query.ts`. Do not hide both unless allowing additional time.
+**Hide before practice:** replace only the text `contains` fallback (`default: return text.includes(filter)`) in `query.ts` with `return true`. The Device filter sends `type: 'contains'`, not `equals`. Keep the UI handler intact. Restore case-insensitive matching, run `npx vitest run src/features/historical-logs/query.test.ts`, then enter `device-0001` and confirm every visible Device ID contains that text. Filtering must precede total calculation and block slicing.
 
 ## 5. Add an editable field — 12 minutes
 

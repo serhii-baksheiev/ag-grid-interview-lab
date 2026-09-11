@@ -1,14 +1,39 @@
 # Performance, accessibility and practical limits
 
-This is a learning application, not a universal benchmark. Measurements below were taken locally in Chromium against a Vite development build on 2026-09-11. Machine load, development validation, browser, data distribution and filter complexity affect the result. No FPS guarantee is made.
+This is a learning application, not a universal benchmark. The historical remediation measurements below use an isolated, production-minified query engine in Playwright Chromium on 2026-09-11. Earlier live observations explicitly identify their own scope. Machine load, development validation, browser, data distribution and filter complexity affect the result. No FPS guarantee is made.
 
 ## Measured observations
 
 The independent [review](PERFORMANCE_REVIEW.md) sampled 10,000 live rows at 100 ms ticks, 1,000 changes per tick and burst enabled. It observed 21 rendered row elements, an input-rate sample of 17,995 events/second, and one 54 ms long task during a five-second interval. This checks that the grid virtualizes DOM rows; it is not a heap-leak or sustained-load proof. Metrics are sampled once per second and can lag the actual grid.
 
-A 500,000-record historical value sort with zero simulated latency completed in 4,208 ms in an isolated review run. Another run under concurrent load was still pending after seven seconds. The mock server uses the main thread cooperatively, so this is a visible loading operation rather than a claim of instant queries. `e2e/lab.spec.ts` exercises the 10,000-row and 500,000-record presets and interaction with filtering.
+### Historical 500k sorting: remediation comparison
 
-The production build includes all Community modules and reports a JavaScript chunk around 1.37 MB minified, about 390 KB gzip. This is an intentional simplicity/bundle-size trade-off for an offline interview lab. Vite's chunk-size warning remains visible. Selectively registering modules and splitting optional screens is a possible next optimization; splitting a vendor chunk alone does not reduce downloaded bytes.
+Run `node scripts/history-benchmark.mjs <label>` from the repository root. It builds `query.ts` with Vite (minified IIFE), loads it into a blank Chromium page, then runs three 500,000-record ascending Value sorts. No network latency or grid rendering is included. Baseline is `b406f07`; measurements are local observations, not a browser-independent guarantee.
+
+| Metric (three runs)                       | Before                | After              |
+| ----------------------------------------- | --------------------- | ------------------ |
+| Wall time, ms                             | 4,153 / 4,765 / 4,599 | 690 / 680 / 631    |
+| CDP task CPU time, ms                     | 970 / 1,518 / 1,387   | 725 / 713 / 665    |
+| Cooperative yields                        | 711 / 711 / 711       | 83 / 82 / 77       |
+| Maximum 16 ms timer drift, ms             | 7 / 31 / 11           | 17 / 17 / 9        |
+| Abort signal to rejection, ms             | 4.7 / 4.3 / 4.4       | 0.6 / 0.1 / <0.1   |
+| Abort request scheduling to rejection, ms | 25 / 28 / 25          | 34 / 33 / 33       |
+| Sampled heap-used delta, MB               | 18.2 / 10.1 / 8.8     | 14.9 / 20.3 / 21.1 |
+| Final typed index, MB                     | 2.0                   | 2.0                |
+
+The median wall time fell from 4,599 to 680 ms (about 85%). CDP CPU and heap samples include a second query aborted after a nominal 20 ms timer; CPU is task time, not a profiler attribution to only the sort. Heap deltas are allocation/GC-sensitive samples, not retained-heap or peak-memory measurements. The algorithm retains the same index/scratch/scalar-key structure; the final index remains exactly 2,000,000 bytes. No heap-leak claim is made.
+
+Work yields after an 8 ms budget, checked every 256 scan rows and 1,024 merge outputs. `MessageChannel` tasks avoid nested timer clamping; environments without that API use a timer with the same time budget. A tested `scheduler.yield()` variant starved ordinary timer probes in this harness and was discarded. Message ports close after each yield. Cancellation checks occur after each yield and each merge pass. Input responsiveness remains subject to browser scheduling and GC; the budget is not a hard maximum task duration.
+
+Raw runs are saved locally to ignored `.claude/runs/history-<label>.json`. A separate production-preview E2E verifies the complete grid sort workflow; its duration includes UI work and should not be compared directly with these isolated numbers.
+
+Selective Community module registration reduced the production JavaScript from 1,370.96 kB / 389.92 kB gzip to 1,237.06 kB / 354.23 kB gzip (about 9% less gzip). The initial screen uses the same grid library as the other screens, so splitting a vendor chunk alone would not reduce initial downloaded bytes. Screen lazy loading was considered but not added without evidence of further worthwhile savings. The size warning remains visible; no limit was raised to hide it.
+
+### Live 10k reset
+
+The first baseline reset of a paused 10,000-row fleet produced long tasks of 609 and 255 ms; warm repeats measured 108 and 84 ms. After reusing the seeded baseline and restoring only changed rows, three paused resets produced no observed tasks over the browser's 50 ms long-task threshold (wall 119 / 126 / 79 ms, including automation and paints). Run `node scripts/live-benchmark.mjs` with production preview on port 4175.
+
+Reset and resize now submit at most 200 rows per operation type per transaction, waiting for each async batch before queuing the next. This trades total completion time for responsiveness: a heavily changed 10k fleet or resize can take several seconds. Reset controls show a pending state, streaming pauses its updates during the operation, and grid sorting/filtering still contributes work to each batch. The paused-reset figures do not guarantee a sub-200 ms task for every active/sorted workload. The 10k stress E2E checks reset completion after streaming and a subsequent resize to 1k.
 
 ## Where work happens
 
@@ -20,7 +45,7 @@ The production build includes all Community modules and reports a JavaScript chu
 | Configuration            | Small 100-device fleet; stable editable row array; separate saved baseline and dirty metadata                         | Dirty/deletion detection includes nested lookups. Do not scale this unchanged to hundreds of thousands of editable rows.            |
 | Analytics                | One deterministic 10,000-reading sample per mount; 24 summary rows; small independent bar chart                       | A bounded synchronous sample aggregation on entry. Not a full-history analytics query.                                              |
 
-The historical mock yields every 4,096 scan items and every 16,384 merge-sort output items, plus between merge passes. Superseded query generations are aborted. Concurrent requests for different blocks of the same query share computation and remain valid. Destroy clears pending delay timers and aborts indexing. This is materially different from dropping every response except the globally newest request.
+The historical mock yields according to the time budget described above. Superseded query generations are aborted. Concurrent requests for different blocks of the same query share computation and remain valid. Destroy clears pending delay timers, aborts indexing and settles each pending grid callback exactly once. Changing only latency preserves the query index and existing requests. This is materially different from dropping every response except the globally newest request.
 
 ## React and lifecycle decisions
 

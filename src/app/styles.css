@@ -36,7 +36,7 @@ input:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 a:focus-visible {
-  outline: 3px solid #648cff;
+  outline: 3px solid var(--focus, #4264d9);
 }
 button {
   cursor: pointer;
@@ -123,8 +123,10 @@ code {
   --background: #f3f5f9;
   --soft: #f7f9fc;
   --text: #253249;
-  --muted: #68778f;
+  --muted: #586780;
   --border: #e1e6ef;
+  --control-border: #8795ab;
+  --focus: #4264d9;
   display: flex;
   min-height: 100vh;
   background: var(--background);
@@ -137,6 +139,8 @@ code {
   --text: #e1e8f4;
   --muted: #a3b2c8;
   --border: #30415b;
+  --control-border: #7284a0;
+  --focus: #afc1ff;
   color-scheme: dark;
 }
 .sidebar {
@@ -318,7 +322,7 @@ code {
   font-size: 9px;
   letter-spacing: 1.6px;
   font-weight: 700;
-  color: #5674c6;
+  color: #4561af;
   margin-bottom: 12px;
 }
 .connection,
@@ -338,7 +342,7 @@ code {
   background: #94a1b8;
 }
 .connection.active {
-  color: #18785e;
+  color: #14644f;
 }
 .connection.active i {
   background: #23af82;
@@ -521,7 +525,7 @@ code {
   font-weight: 600;
 }
 .status-normal {
-  color: #18785e;
+  color: #14644f;
   background: #e2f3ed;
 }
 .status-warning {
@@ -533,7 +537,7 @@ code {
   background: #fce7eb;
 }
 .status-offline {
-  color: #64748b;
+  color: #52627a;
   background: #e8edf4;
 }
 .dark .status-normal {
@@ -628,7 +632,7 @@ code {
 .step-number {
   font-size: 32px;
   font-weight: 300;
-  color: #8ba1e9;
+  color: #5269af;
   display: block;
   margin-bottom: 30px;
 }
@@ -794,4 +798,36 @@ section > details.panel pre {
 }
 .dark .eyebrow {
   color: #9eb5ff;
+}
+
+.unsaved-list {
+  padding: 15px 18px;
+  margin: 18px 0;
+}
+.unsaved-list h2 {
+  font-size: 14px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.dark button.danger {
+  color: #ffb9c6;
+}
+.dark .step-number {
+  color: #a9bbf5;
+}
+
+button,
+input,
+select,
+.column-controls summary {
+  border-color: var(--control-border);
 }

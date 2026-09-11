@@ -133,3 +133,13 @@
     gap: 6px;
   }
 }
+
+@media (max-width: 520px) {
+  .app .column-controls > div {
+    position: fixed;
+    inset: auto 14px;
+    width: auto;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}

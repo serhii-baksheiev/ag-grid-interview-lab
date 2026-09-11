@@ -1,8 +1,8 @@
 # Feature and edition matrix
 
-The installed grid is AG Grid **36.1.0**. The running lab registers `AllCommunityModule` from `ag-grid-community`; it installs no Enterprise package or licence key. All rows marked Enterprise below describe possible extensions, not active functionality.
+The installed grid is AG Grid **36.1.0**. The running lab selectively registers the modules used by these screens from `ag-grid-community`; it installs no Enterprise package or licence key. All rows marked Enterprise below describe possible extensions, not active functionality.
 
-Research used the repository `ag-dev` skill, official current documentation and AG MCP. At implementation time MCP accepted 36.0.0 but had not indexed 36.1.0; the npm registry and current documentation confirmed 36.1.0. Current docs were used to cross-check the APIs. See [official edition overview](https://www.ag-grid.com/react-data-grid/community-vs-enterprise/) and [module registration](https://www.ag-grid.com/react-data-grid/modules/).
+See [official edition overview](https://www.ag-grid.com/react-data-grid/community-vs-enterprise/) and [module registration](https://www.ag-grid.com/react-data-grid/modules/).
 
 | Feature                                         | Screen                                                   | Edition / owner                            | Main API                                                                                                                       | Purpose and fallback                                                         |
 | ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ Research used the repository `ag-dev` skill, official current documentation and 
 | Sparklines / Integrated Charts                  | Extension                                                | Enterprise                                 | Sparkline renderer / integrated chart APIs                                                                                     | Native in-grid visuals; current chart is separate HTML/CSS                   |
 | Server-Side Row Model                           | Extension                                                | Enterprise                                 | `rowModelType='serverSide'`, `IServerSideDatasource`                                                                           | Remote grouping/aggregation/pivot; Infinite handles current flat history     |
 
-All Community modules in the table are included by `AllCommunityModule`. Development-only `enableDevValidations()` reports missing modules and invalid configuration. An Enterprise experiment would register its required modules from `ag-grid-enterprise` (or `AllEnterpriseModule` during prototyping); integrated charts additionally need the relevant AG Charts module. That extension is deliberately not part of this application's dependency graph.
+The used Community modules are registered explicitly in `src/shared/grid/register.ts`; their dependencies register transitively. Development-only `enableDevValidations()` reports missing modules and invalid configuration. Enterprise features would require additional packages, modules and licensing; they are outside this application's dependency graph.
 
 ## Official feature references
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useGridCellEditor, type CustomCellEditorProps } from 'ag-grid-react';
 import type { Device } from '../../shared/types';
 import { validateDevice } from './model';
@@ -9,6 +9,7 @@ type Props = Pick<
 export function NameEditor({ value, onValueChange, parseValue, data }: Props) {
   // Preserve raw typing (including spaces); AG Grid receives the parsed draft.
   const [text, setText] = useState(value ?? '');
+  const errorId = useId();
   const input = useRef<HTMLInputElement>(null);
   const error = validateDevice({ ...data, name: text.trim() }).name;
   useEffect(() => {
@@ -21,17 +22,25 @@ export function NameEditor({ value, onValueChange, parseValue, data }: Props) {
     getValidationElement: () => input.current!,
   });
   return (
-    <input
-      ref={input}
-      className="name-editor"
-      aria-label="Device name editor"
-      aria-invalid={!!error}
-      title={error ?? '1–80 characters; surrounding spaces are trimmed'}
-      value={text}
-      onChange={(event) => {
-        setText(event.target.value);
-        onValueChange(parseValue(event.target.value) as string);
-      }}
-    />
+    <>
+      <input
+        ref={input}
+        className="name-editor"
+        aria-label="Device name editor"
+        aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
+        title={error ?? '1–80 characters; surrounding spaces are trimmed'}
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+          onValueChange(parseValue(event.target.value) as string);
+        }}
+      />
+      {error && (
+        <span id={errorId} className="sr-only">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
