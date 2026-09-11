@@ -36,7 +36,7 @@ Practice in a disposable local branch. Hide only the relevant solution while pra
 
 **Trade-off:** keep the React renderer small and stateless; avoid fetches or state subscriptions in every cell. A JavaScript class renderer with `init` and `getGui` is an alternative only if profiling justifies the extra lifecycle code.
 
-**Hide before practice:** replace only the body of exported `statusRenderer` in `src/shared/grid/base.ts` with `return createElement('span', null, params.value ?? 'offline')`. This keeps the React import used while removing the badge styling. Keep its signature, imports and column references intact. Run `npm run typecheck`; restore the text badge, then inspect the Live and Analytics status cells.
+**Hide before practice:** replace only the body of exported `statusRenderer` in `src/shared/grid/base.ts` with `return createElement('span', null, params.value ?? 'offline')`. This keeps the React import used while removing the badge styling. Keep its signature, imports and column references intact. Run `npm run typecheck`; restore the text badge, then inspect the Live and Historical status cells.
 
 ## 4. Add a historical filter — 12 minutes
 

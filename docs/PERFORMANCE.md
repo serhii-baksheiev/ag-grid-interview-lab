@@ -25,6 +25,8 @@ The median wall time fell from 4,599 to 680 ms (about 85%). CDP CPU and heap sam
 
 Work yields after an 8 ms budget, checked every 256 scan rows and 1,024 merge outputs. `MessageChannel` tasks avoid nested timer clamping; environments without that API use a timer with the same time budget. A tested `scheduler.yield()` variant starved ordinary timer probes in this harness and was discarded. Message ports close after each yield. Cancellation checks occur after each yield and each merge pass. Input responsiveness remains subject to browser scheduling and GC; the budget is not a hard maximum task duration.
 
+The benchmark now rejects unrelated errors, a query that resolves without cancellation, and an AbortError before the requested signal is aborted. Four regression tests protect this evidence check; three additional corrected-engine runs measured 671 / 669 / 682 ms with verified cancellation. A baseline rerun with the same stricter check also verified cancellation, but wall times varied from 6.5 to 11.2 seconds (still 711 yields), illustrating timer/scheduling sensitivity; the original comparison above is retained rather than selecting this slower baseline.
+
 Raw runs are saved locally to ignored `.claude/runs/history-<label>.json`. A separate production-preview E2E verifies the complete grid sort workflow; its duration includes UI work and should not be compared directly with these isolated numbers.
 
 Selective Community module registration reduced the production JavaScript from 1,370.96 kB / 389.92 kB gzip to 1,237.06 kB / 354.23 kB gzip (about 9% less gzip). The initial screen uses the same grid library as the other screens, so splitting a vendor chunk alone would not reduce initial downloaded bytes. Screen lazy loading was considered but not added without evidence of further worthwhile savings. The size warning remains visible; no limit was raised to hide it.
@@ -55,7 +57,7 @@ Live timers stop on unmount, and pending transactions are flushed. Each deferred
 
 Configuration stays mounted after the first visit so drafts and an in-progress save survive navigation. It does not run a background stream. A save disables editing and mutation controls until completion, and the baseline only advances after success. Unmount clears its save timer. A `beforeunload` handler warns while dirty rows exist; no configuration rows are stored in localStorage.
 
-Grid State serialization retains only view-related sections, caps input length and validates stored shapes. Storage writes are synchronous and bounded; errors are caught. Debounce persistence only if profiling shows a meaningful cost during resizing. Avoid storing row selection, scroll state and full row datasets unnecessarily.
+Grid State serialization retains only view-related sections, caps input length and validates stored shapes. Storage writes are synchronous and errors are caught; serialization has no explicit output-size cap. Debounce persistence only if profiling shows a meaningful cost during resizing. Avoid storing row selection, scroll state and full row datasets unnecessarily.
 
 ## Accessibility corrections and validation
 

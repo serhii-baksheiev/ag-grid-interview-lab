@@ -1,6 +1,7 @@
 import { build } from 'vite';
 import { chromium } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { requireAbort } from './require-abort.mjs';
 const label = process.argv[2] || 'sample';
 const result = await build({
   configFile: false,
@@ -21,6 +22,9 @@ const page = await browser.newPage();
 await page.goto('about:blank');
 await page.setContent('<h1>Isolated query benchmark</h1>');
 await page.addScriptTag({ content: code });
+await page.addScriptTag({
+  content: `globalThis.requireAbort = ${requireAbort.toString()};`,
+});
 const cdp = await page.context().newCDPSession(page);
 await cdp.send('Performance.enable');
 const runs = [];
@@ -78,16 +82,17 @@ for (let i = 0; i < 3; i++) {
       requested = performance.now();
       controller.abort();
     }, 20);
-    try {
-      await HistoryBench.prepareHistory({
+    await globalThis.requireAbort(
+      HistoryBench.prepareHistory({
         total: 500000,
         startRow: 0,
         endRow: 200,
         filterModel: {},
         sortModel: [{ colId: 'value', sort: 'asc' }],
         signal: controller.signal,
-      });
-    } catch {}
+      }),
+      controller.signal,
+    );
     return {
       wallMs,
       yields,
