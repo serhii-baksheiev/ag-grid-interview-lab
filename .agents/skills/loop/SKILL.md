@@ -79,15 +79,22 @@ state-vs-queue split exists to prevent.
 node .claude/scripts/preflight.mjs
 ```
 
-Five items are scripted (kill switch absent · `RIG_RUN_DIR` not already
-exported · the versioned revalidation detection contract is supported · local
-default branch matches the remote · the last deploy concluded successfully)
+Scripted checks cover the kill switch, inherited `RIG_RUN_DIR`, the versioned
+revalidation detection contract, queue readability through its configured adapter,
+default-branch freshness, and the last deploy result,
 and the script **prints the ones it did not check, every time**. Paste the block into the journal: a checklist that
 leaves no record cannot tell you it was skipped.
 
 Verdicts: **STOP** → do not start, deal with the cause. **CAUTION** → start,
-knowing which ground is soft. **GO** → the scripted five are clean; the rest are
+knowing which ground is soft. **GO** → the scripted checks are clean; the rest are
 still yours.
+
+The queue probe reads one adapter listing without selecting or claiming an item.
+A readable empty queue passes this probe; a configuration, adapter, or queue-read
+failure produces **STOP**. See the generator's `test/template/preflight-queue.test.ts`
+(absent in a generated rig) › "reads exactly one adapter listing without selecting, claiming, or writing queue and run files",
+› "passes a readable empty queue without changing the other preflight verdict or queue state",
+and › "stops when %s cannot be read".
 
 **An `unknown` never becomes a `pass`.** A probe that could not run tells you
 nothing.
@@ -149,7 +156,37 @@ What a hook CAN see is a file, so the unattended signal is one:
 # at claim time, from the paths the item names (repo-relative prefixes, with
 # their trailing slash); the guard refuses every other rulebook edit while it is on
 node .claude/scripts/unattended-flag.mjs on --root "$PWD" --item <item-id> --run-dir "$RIG_RUN_DIR" --allow <prefix> [<prefix>…]
+
+# 🔴 THEN READ IT BACK, and stop the run if it is not armed. Not optional.
+node .claude/scripts/unattended-flag.mjs verify --root "$PWD" --item <item-id>
 ```
+
+🔴 **The second command is the one that makes the first one's failure
+visible, and skipping it inverts the whole mechanism.** `on` refuses an allow
+entry that *widens* the rulebook — and the refusal leaves **no flag on disk**
+(pinned in the generator's `test/template/unattended-flag.test.ts`, absent in a
+generated rig, › "does not change `on`: a widening --allow still exits 1 and
+still writes no flag"), while `guard-rulebook` reads an absent flag as an
+attended session and refuses nothing. So a run that armed with a widening entry and did not check is the
+**least** constrained run this project can produce: every rule, hook, skill and
+settings path editable, with nothing downstream saying so. The failure is loud
+for one line at claim time and silent for the rest of the session.
+
+`verify` exits non-zero when no usable flag is armed for this item — absent,
+unreadable, or naming a different item — and its message says the run is
+unguarded rather than merely that a file is missing. **A non-zero exit here ends
+the run**; it does not get retried with a wider allow-list. The natural way to
+hit this is not exotic: an item touching the queue adapter invites `--allow
+.claude/scripts/`, and that entry is refused outright. Pinned in the
+generator's `test/template/unattended-flag.test.ts` (absent in a generated rig)
+› "refuses when no flag is armed, naming the item and the unguarded rulebook"
+and › "refuses when the armed flag names a different item, naming both".
+
+⚠ **What this does not close.** `verify` is mechanical where it runs; that it
+runs is this sentence. It removes the silence, not the possibility that a run
+ignores an exit status — and the hook-enforced version is not available, because
+`guard-rulebook` cannot tell "attended" from "unattended but unarmed": absence of
+a flag is all it sees.
 
 `guard-rulebook` reads it (`.claude/rules/autonomy.md`, "Never"): with the flag
 on, a Write/Edit/MultiEdit/NotebookEdit/`apply_patch` under the generated
