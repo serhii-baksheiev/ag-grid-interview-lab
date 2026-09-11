@@ -9,51 +9,98 @@ const sections = [
   'filter',
   'partialColumnState',
 ] as const;
-const object = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
-const strings = (value: unknown): value is string[] =>
-  Array.isArray(value) &&
-  value.length <= 100 &&
-  value.every((v) => typeof v === 'string' && v.length <= 100);
-function validFilter(value: unknown, depth = 0): boolean {
-  if (
-    !object(value) ||
-    depth > 2 ||
-    !['text', 'number', 'date'].includes(String(value.filterType))
-  )
-    return false;
-  if ('operator' in value)
-    return (
-      ['AND', 'OR'].includes(String(value.operator)) &&
-      Array.isArray(value.conditions) &&
-      value.conditions.length <= 4 &&
-      value.conditions.every((v) => validFilter(v, depth + 1))
-    );
+const object = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+const id = (v: unknown): v is string =>
+  typeof v === 'string' &&
+  v.length > 0 &&
+  v.length <= 100 &&
+  !['__proto__', 'constructor', 'prototype'].includes(v);
+const strings = (v: unknown): v is string[] =>
+  Array.isArray(v) &&
+  v.length <= 100 &&
+  v.every(id) &&
+  new Set(v).size === v.length;
+const finite = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v);
+
+// Reconstruct supported fields. The UI uses the default maxNumConditions=2.
+function filter(
+  v: unknown,
+  child = false,
+): Record<string, unknown> | undefined {
+  if (!object(v) || !['text', 'number', 'date'].includes(String(v.filterType)))
+    return;
+  const filterType = v.filterType;
+  if ('operator' in v || 'conditions' in v) {
+    if (
+      child ||
+      !['AND', 'OR'].includes(String(v.operator)) ||
+      !Array.isArray(v.conditions) ||
+      v.conditions.length < 1 ||
+      v.conditions.length > 2
+    )
+      return;
+    const conditions = v.conditions.map((c) => filter(c, true));
+    if (conditions.some((c) => !c || c.filterType !== filterType)) return;
+    return { filterType, operator: v.operator, conditions };
+  }
+  const type = v.type;
+  const noValue = [
+    'blank',
+    'notBlank',
+    ...(filterType === 'text' ? ['true', 'false'] : []),
+  ];
+  if (noValue.includes(String(type))) return { filterType, type };
+  if (filterType === 'text') {
+    if (
+      ![
+        'equals',
+        'notEqual',
+        'contains',
+        'notContains',
+        'startsWith',
+        'endsWith',
+      ].includes(String(type)) ||
+      typeof v.filter !== 'string' ||
+      v.filter.length > 500
+    )
+      return;
+    return { filterType, type, filter: v.filter };
+  }
   if (
     ![
       'equals',
       'notEqual',
-      'contains',
-      'notContains',
-      'startsWith',
-      'endsWith',
       'lessThan',
       'lessThanOrEqual',
       'greaterThan',
       'greaterThanOrEqual',
       'inRange',
-      'blank',
-      'notBlank',
-    ].includes(String(value.type))
+    ].includes(String(type))
   )
-    return false;
-  return ['filter', 'filterTo', 'dateFrom', 'dateTo'].every(
-    (k) =>
-      value[k] === undefined ||
-      value[k] === null ||
-      (typeof value[k] === 'string' && value[k].length < 500) ||
-      (typeof value[k] === 'number' && Number.isFinite(value[k])),
-  );
+    return;
+  if (filterType === 'number') {
+    if (!finite(v.filter) || (type === 'inRange' && !finite(v.filterTo)))
+      return;
+    return {
+      filterType,
+      type,
+      filter: v.filter,
+      ...(type === 'inRange' ? { filterTo: v.filterTo } : {}),
+    };
+  }
+  const date = (s: unknown) =>
+    typeof s === 'string' &&
+    /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(s) &&
+    Number.isFinite(Date.parse(s));
+  if (!date(v.dateFrom) || (type === 'inRange' && !date(v.dateTo))) return;
+  return {
+    filterType,
+    type,
+    dateFrom: v.dateFrom,
+    dateTo: type === 'inRange' ? v.dateTo : null,
+  };
 }
 export function serializeState(state: GridState): string {
   return JSON.stringify(
@@ -66,79 +113,92 @@ export function serializeState(state: GridState): string {
 }
 export function deserializeState(text: string | null): GridState | undefined {
   try {
-    if (!text || text.length > 50000) return undefined;
+    if (!text || text.length > 50000) return;
     const v: unknown = JSON.parse(text);
-    if (!object(v) || typeof v.version !== 'string' || v.version.length > 30)
-      return undefined;
     if (
-      v.partialColumnState !== undefined &&
-      typeof v.partialColumnState !== 'boolean'
+      !object(v) ||
+      typeof v.version !== 'string' ||
+      !/^\d{1,3}(\.\d{1,3}){0,2}$/.test(v.version)
     )
-      return undefined;
+      return;
+    const safe: Record<string, unknown> = { version: v.version };
     for (const [section, key] of [
       ['columnOrder', 'orderedColIds'],
       ['columnVisibility', 'hiddenColIds'],
     ] as const) {
-      if (
-        v[section] !== undefined &&
-        (!object(v[section]) || !strings(v[section][key]))
-      )
-        return undefined;
+      if (object(v[section]) && strings(v[section][key]))
+        safe[section] = { [key]: v[section][key] };
     }
     if (
-      v.columnPinning !== undefined &&
-      (!object(v.columnPinning) ||
-        !strings(v.columnPinning.leftColIds) ||
-        !strings(v.columnPinning.rightColIds))
-    )
-      return undefined;
+      object(v.columnPinning) &&
+      strings(v.columnPinning.leftColIds) &&
+      strings(v.columnPinning.rightColIds)
+    ) {
+      safe.columnPinning = {
+        leftColIds: v.columnPinning.leftColIds,
+        rightColIds: v.columnPinning.rightColIds,
+      };
+    }
     if (
-      v.columnSizing !== undefined &&
-      (!object(v.columnSizing) ||
-        !Array.isArray(v.columnSizing.columnSizingModel) ||
-        v.columnSizing.columnSizingModel.length > 100 ||
-        !v.columnSizing.columnSizingModel.every(
+      object(v.columnSizing) &&
+      Array.isArray(v.columnSizing.columnSizingModel) &&
+      v.columnSizing.columnSizingModel.length <= 100
+    ) {
+      const model = v.columnSizing.columnSizingModel;
+      if (
+        model.every(
           (c) =>
             object(c) &&
-            typeof c.colId === 'string' &&
+            id(c.colId) &&
             ['width', 'flex'].every(
-              (key) =>
-                c[key] === undefined ||
-                (typeof c[key] === 'number' &&
-                  Number.isFinite(c[key]) &&
-                  c[key] >= 0 &&
-                  c[key] <= 10000),
+              (k) =>
+                c[k] === undefined ||
+                (finite(c[k]) && c[k] >= 0 && c[k] <= 10000),
             ),
-        ))
-    )
-      return undefined;
+        )
+      ) {
+        safe.columnSizing = {
+          columnSizingModel: model.map((c) => ({
+            colId: c.colId,
+            ...(c.width !== undefined ? { width: c.width } : {}),
+            ...(c.flex !== undefined ? { flex: c.flex } : {}),
+          })),
+        };
+      }
+    }
     if (
-      v.sort !== undefined &&
-      (!object(v.sort) ||
-        !Array.isArray(v.sort.sortModel) ||
-        v.sort.sortModel.length > 100 ||
-        !v.sort.sortModel.every(
-          (s) =>
-            object(s) &&
-            typeof s.colId === 'string' &&
-            ['asc', 'desc'].includes(String(s.sort)),
-        ))
-    )
-      return undefined;
+      object(v.sort) &&
+      Array.isArray(v.sort.sortModel) &&
+      v.sort.sortModel.length <= 100 &&
+      v.sort.sortModel.every(
+        (s) =>
+          object(s) && id(s.colId) && ['asc', 'desc'].includes(String(s.sort)),
+      )
+    ) {
+      safe.sort = {
+        sortModel: v.sort.sortModel.map((s) => ({
+          colId: s.colId,
+          sort: s.sort,
+        })),
+      };
+    }
     if (
-      v.filter !== undefined &&
-      (!object(v.filter) ||
-        !object(v.filter.filterModel) ||
-        Object.keys(v.filter.filterModel).length > 100 ||
-        !Object.values(v.filter.filterModel).every((f) => validFilter(f)))
-    )
-      return undefined;
-    // Cast follows explicit validation; unknown sections are discarded, never handed to Grid API.
-    return Object.fromEntries(
-      sections
-        .filter((key) => v[key] !== undefined)
-        .map((key) => [key, v[key]]),
-    ) as GridState;
+      object(v.filter) &&
+      object(v.filter.filterModel) &&
+      Object.keys(v.filter.filterModel).length <= 100
+    ) {
+      const entries = Object.entries(v.filter.filterModel).flatMap(
+        ([key, value]) => {
+          const validated = id(key) ? filter(value) : undefined;
+          return validated ? [[key, validated]] : [];
+        },
+      );
+      if (entries.length || !Object.keys(v.filter.filterModel).length)
+        safe.filter = { filterModel: Object.fromEntries(entries) };
+    }
+    if (typeof v.partialColumnState === 'boolean')
+      safe.partialColumnState = v.partialColumnState;
+    return Object.keys(safe).length > 1 ? (safe as GridState) : undefined;
   } catch {
     return undefined;
   }

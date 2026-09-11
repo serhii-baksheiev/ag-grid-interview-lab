@@ -23,7 +23,7 @@ flowchart LR
   Transaction --> Counters[Applied-update counters]
 ```
 
-The complete current fleet is available in memory, so the Client-Side Row Model can sort, filter and update it directly. The initial `rowData` array is replaced only when resetting/regenerating the fleet. Each tick builds replacement objects for changed devices and submits one transaction. AG Grid batches transactions with a 50 ms window. Row identity comes from `getRowId`, never the current displayed index.
+The complete current fleet is available in memory, so the Client-Side Row Model can sort, filter and update it directly. The initial `rowData` array stays stable. Reset and resize reuse the seeded baseline and submit only changed, added or removed rows in bounded async transaction batches. Each tick builds replacement objects for changed devices and submits one transaction. AG Grid batches transactions with a 50 ms window. Row identity comes from `getRowId`, never the current displayed index.
 
 Metrics use refs for stream counters and update React separately from every individual event. Timer cleanup stops input and flushes pending grid work when appropriate. Column definitions and shared grid props keep stable references. Rendering uses ordinary formatting where possible and a small status renderer where visual semantics justify it.
 
@@ -45,7 +45,7 @@ The default unfiltered, unsorted query addresses a block directly. Filtering or 
 
 The datasource caches a promise for the current query index so valid concurrent blocks share processing. Query signature changes abort obsolete index work; request sequence numbers are diagnostic identities, not a latest-request-wins rule. Different blocks for the same query remain valid concurrently. Destroying the datasource cancels pending timers and processing. The inspector retains eight entries, not an unbounded request history.
 
-AG Grid caches eight blocks of 200 rows. Text and number filters are processed by the mock before pagination, including supported AND/OR conditions. Column controls debounce filter changes. Quick Filter is used only on the client-side live grid. Historical position jumping targets the current result ordering, not a raw timestamp lookup.
+AG Grid caches eight blocks of 200 rows. Text and number filters are processed by the mock before pagination, including supported AND/OR conditions. ColumnControls toggles column visibility; filterParams.debounceMs and the separate Device input timer debounce filters. Quick Filter is used only on the client-side live grid. Historical position jumping targets the current result ordering, not a raw timestamp lookup.
 
 Cooperative yielding does not make this a server: index construction still consumes main-thread CPU and O(N) scalar/index memory. It is a teaching compromise that avoids a backend and makes the request contract visible. No full 500,000-record object array is recreated on React renders.
 
@@ -68,7 +68,7 @@ A custom React name editor (`NameEditor.tsx`) demonstrates `CustomCellEditorProp
 
 The invariant is `warningThreshold < criticalThreshold`; sampling is an integer from 1 to 3,600 seconds. A stable grid row array supports native edit undo/redo while React refreshes dirty metadata. The saved baseline is copied independently. Save is pessimistic: editing/actions are restricted while the simulated request is in flight, and the baseline advances only on success. Failed saves retain drafts.
 
-Adding a row marks it dirty. Deletion requires confirmation and is staged; Save all commits staged deletions and Revert all restores them before saving. Native undo/redo handles cell edits, not the complete application transaction history. Sorting, filtering and row replacement clear native undo stacks.
+Adding a row marks it dirty. Deletion requires confirmation and is staged; Save all commits staged deletions and Revert all restores them before saving. Native undo/redo handles cell edits, not the complete application transaction history. Sorting, filtering, row replacement and column movement, pinning or visibility changes clear native undo stacks. Columns and Reset State can therefore clear edit history too.
 
 The shell keeps Configuration mounted once visited, preserving in-memory drafts when navigating. Reload starts a fresh mock session. In production, saved configuration would come from an API and draft durability would be an explicit product decision.
 

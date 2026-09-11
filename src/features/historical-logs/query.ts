@@ -13,7 +13,22 @@ export interface HistoryIndex {
   indices: Uint32Array | null;
   total: number;
 }
-const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+// Message tasks avoid nested timer clamping without prioritising query continuations
+// ahead of ordinary timers (including cancellation and responsiveness probes).
+const pause = () =>
+  new Promise<void>((resolve) => {
+    if (typeof MessageChannel === 'undefined') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 function check(signal?: AbortSignal) {
   signal?.throwIfAborted();
 }
@@ -87,6 +102,7 @@ export async function prepareHistory(
   let indices = new Uint32Array(total);
   const keys: (string | number)[][] = query.sortModel.map(() => []);
   let count = 0;
+  let deadline = performance.now() + 8;
   for (let index = 0; index < total; index++) {
     const row = telemetryAt(index);
     if (filters.every(([key, model]) => matches(field(row, key), model))) {
@@ -97,9 +113,10 @@ export async function prepareHistory(
           typeof value === 'number' ? value : String(value ?? '');
       });
     }
-    if (index % 4096 === 4095) {
+    if (index % 256 === 255 && performance.now() >= deadline) {
       await pause();
       check(query.signal);
+      deadline = performance.now() + 8;
     }
   }
   indices = indices.slice(0, count);
@@ -126,14 +143,14 @@ export async function prepareHistory(
             a < middle && (b >= end || compare(indices[a]!, indices[b]!) <= 0)
               ? indices[a++]!
               : indices[b++]!;
-          if (target % 16384 === 16383) {
+          if (target % 1024 === 1023 && performance.now() >= deadline) {
             await pause();
             check(query.signal);
+            deadline = performance.now() + 8;
           }
         }
       }
       [indices, scratch] = [scratch, indices];
-      await pause();
       check(query.signal);
     }
   }

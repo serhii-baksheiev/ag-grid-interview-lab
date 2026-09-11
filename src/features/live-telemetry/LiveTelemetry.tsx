@@ -15,7 +15,11 @@ import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { liveColumns } from './columns';
 export default function LiveTelemetry() {
   const [count, setCount] = useState(1000);
-  const [rows, setRows] = useState(() => generateLiveDevices(1000));
+  const [rows] = useState(() => generateLiveDevices(1000));
+  const baseline = useRef(rows);
+  const [resetting, setResetting] = useState(false);
+  const resettingRef = useRef(false);
+  const sample = useRef({ previous: 0, last: 0 });
   const [api, setApi] = useState<GridApi<LiveDevice>>();
   const [running, setRunning] = useState(true);
   const [interval, setIntervalMs] = useState(250);
@@ -29,6 +33,7 @@ export default function LiveTelemetry() {
   useEffect(() => {
     if (!api || !running) return;
     const timer = window.setInterval(() => {
+      if (resettingRef.current) return;
       const tick = ++counters.current.tick;
       const amount = Math.min(
         count,
@@ -73,9 +78,9 @@ export default function LiveTelemetry() {
     };
   }, [api, running, interval, changes, burst, count]);
   useEffect(() => {
-    let previous = 0;
-    let last = performance.now();
+    sample.current.last = performance.now();
     const timer = window.setInterval(() => {
+      const { previous, last } = sample.current;
       const now = performance.now();
       const current = counters.current;
       setMetrics({
@@ -89,17 +94,56 @@ export default function LiveTelemetry() {
             (now - last),
         ),
       });
-      previous = current.received;
-      last = now;
+      sample.current = { previous: current.received, last: now };
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
   function resetData(next = count) {
+    if (!api || resettingRef.current) return;
     api?.flushAsyncTransactions();
+    const seeded =
+      next === count ? baseline.current : generateLiveDevices(next);
+    const update = seeded.filter((row) => {
+      const current = api.getRowNode(row.id)?.data;
+      return (
+        current &&
+        Object.keys(row).some(
+          (key) =>
+            current[key as keyof LiveDevice] !== row[key as keyof LiveDevice],
+        )
+      );
+    });
+    const add = seeded.filter((row) => !api.getRowNode(row.id));
+    const remove = baseline.current.slice(next);
+    baseline.current = seeded;
     setCount(next);
-    setRows(generateLiveDevices(next));
     counters.current = { received: 0, applied: 0, tick: 0 };
+    sample.current = { previous: 0, last: performance.now() };
     setMetrics({ received: 0, applied: 0, rate: 0 });
+    const length = Math.max(update.length, add.length, remove.length);
+    if (!length) return;
+    resettingRef.current = true;
+    setResetting(true);
+    // Wait for each bounded transaction before queuing the next, allowing input and paint.
+    const batch = (offset: number) => {
+      if (api.isDestroyed()) return;
+      api.applyTransactionAsync(
+        {
+          update: update.slice(offset, offset + 200),
+          add: add.slice(offset, offset + 200),
+          remove: remove.slice(offset, offset + 200),
+        },
+        () => {
+          if (api.isDestroyed()) return;
+          if (offset + 200 < length) batch(offset + 200);
+          else {
+            resettingRef.current = false;
+            setResetting(false);
+          }
+        },
+      );
+    };
+    batch(0);
   }
   return (
     <section aria-label="Live telemetry view">
@@ -149,6 +193,7 @@ export default function LiveTelemetry() {
             Devices
             <select
               aria-label="Devices"
+              disabled={resetting}
               value={count}
               onChange={(e) => resetData(Number(e.target.value))}
             >
@@ -199,7 +244,9 @@ export default function LiveTelemetry() {
             <button className="primary" onClick={() => setRunning((v) => !v)}>
               {running ? 'Pause stream' : 'Start stream'}
             </button>
-            <button onClick={() => resetData()}>Reset data</button>
+            <button disabled={resetting} onClick={() => resetData()}>
+              Reset data
+            </button>
           </div>
         </div>
         <div className="grid-toolbar">
@@ -253,6 +300,7 @@ export default function LiveTelemetry() {
             }}
             onGridPreDestroyed={state.onGridPreDestroyed}
             onGridReady={(e) => {
+              e.api.setGridAriaProperty('label', 'Live telemetry grid');
               setApi(e.api);
               setShowLocation(e.api.getColumn('location')?.isVisible() ?? true);
             }}
@@ -272,6 +320,7 @@ export default function LiveTelemetry() {
           </span>
         </div>
       </div>
+      {resetting && <p role="status">Resetting fleet…</p>}
       <InfoPanel
         model="Client-Side"
         size={count}

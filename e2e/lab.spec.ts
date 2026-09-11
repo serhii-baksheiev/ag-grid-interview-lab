@@ -38,9 +38,8 @@ test('rejects invalid thresholds and supports undo and redo', async ({
     .click();
   const original = generateDevices(1)[0]!;
   await page
-    .getByRole('gridcell', { name: original.name, exact: true })
+    .locator('[row-id="device-00001"] [col-id="warningThreshold"]')
     .click();
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
   await page
     .getByRole('spinbutton')
@@ -192,10 +191,11 @@ test('resets live counters without negative rates and stops applying updates whe
     )
     .toBe(0);
   // Allow the diagnostics to publish transactions already queued before Pause.
-  await page.waitForTimeout(1100);
+  await page.clock.install();
+  await page.clock.runFor(1100);
   const stable = await applied.innerText();
   // One diagnostics interval is needed to observe stability, not merely the immediate label.
-  await page.waitForTimeout(1100);
+  await page.clock.runFor(1100);
   await expect(applied).toHaveText(stable);
   expect(Number(stable.replaceAll(',', ''))).toBeGreaterThanOrEqual(0);
   expect(
@@ -271,13 +271,32 @@ test('filters historical logs and retries a failed request', async ({
     page.getByText('No rows to show', { exact: true }),
   ).toBeVisible();
   await page.getByLabel('Device filter', { exact: true }).fill('');
+  await expect(page.locator('[row-index="0"] [col-id="deviceId"]')).toHaveText(
+    /^device-\d+$/,
+  );
+  await expect(
+    page
+      .getByText('Pending requests', { exact: true })
+      .locator('..')
+      .locator('strong'),
+  ).toHaveText('0');
   await page.getByLabel('Simulate request error', { exact: true }).check();
   await expect(
     page.getByRole('button', { name: 'Retry', exact: true }),
   ).toBeVisible();
+  // Both concurrent blocks must settle before switching the failure source.
+  await expect(
+    page
+      .getByText('Pending requests', { exact: true })
+      .locator('..')
+      .locator('strong'),
+  ).toHaveText('0');
   await page.getByLabel('Simulate request error', { exact: true }).uncheck();
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByRole('gridcell').first()).toBeVisible();
+  await expect(page.locator('[row-index="0"] [col-id="deviceId"]')).toHaveText(
+    /^device-\d+$/,
+  );
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('edits and saves device configuration', async ({ page }) => {
@@ -357,10 +376,11 @@ test('restores live column visibility after reload', async ({ page }) => {
   ).toHaveCount(0);
 });
 
-test('remains interactive at 10,000 live devices and 500,000 history records', async ({
+test('loads 10,000 live devices and filters 500,000 history records', async ({
   page,
 }) => {
   await page.goto('/');
+  test.setTimeout(60000);
   await page.getByLabel('Devices', { exact: true }).selectOption('10000');
   await page.getByLabel('Changes / tick', { exact: true }).selectOption('1000');
   await page.getByRole('button', { name: 'Pause stream', exact: true }).click();

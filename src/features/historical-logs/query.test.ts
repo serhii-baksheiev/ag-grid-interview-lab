@@ -44,6 +44,26 @@ describe('historical range queries', () => {
     ).toBe(true);
     expect(result.total).toBe(result.rows.length);
   });
+  it('filters case-insensitive contains matches before paginating', async () => {
+    const needle = 'DEVICE-0001';
+    const expected = Array.from({ length: base.total }, (_, index) =>
+      telemetryAt(index),
+    ).filter((row) =>
+      row.deviceId.toLowerCase().includes(needle.toLowerCase()),
+    );
+    const result = await queryHistory({
+      ...base,
+      startRow: 2,
+      endRow: 5,
+      filterModel: {
+        deviceId: { filterType: 'text', type: 'contains', filter: needle },
+      },
+    });
+
+    expect(expected.length).toBeGreaterThan(5);
+    expect(result.total).toBe(expected.length);
+    expect(result.rows).toEqual(expected.slice(2, 5));
+  });
   it('supports numeric ranges and combined AND conditions', async () => {
     const result = await queryHistory({
       ...base,

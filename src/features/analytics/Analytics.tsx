@@ -150,7 +150,10 @@ export default function Analytics() {
             initialState={state.initialState}
             onStateUpdated={state.onStateUpdated}
             onGridPreDestroyed={state.onGridPreDestroyed}
-            onGridReady={(event) => setApi(event.api)}
+            onGridReady={(event) => {
+              event.api.setGridAriaProperty('label', 'Analytics summary grid');
+              setApi(event.api);
+            }}
           />
         </div>
       </div>

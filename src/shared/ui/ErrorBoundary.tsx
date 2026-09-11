@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 export class ErrorBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; storageKey: string },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -15,10 +15,19 @@ export class ErrorBoundary extends Component<
       <div className="notice error" role="alert">
         <h2>This view could not be displayed.</h2>
         <p>
-          Reload to restart the local demo. Unsaved configuration will be lost.
+          Reset this saved view to try again. Other screens remain available.
         </p>
-        <button onClick={() => window.location.reload()}>
-          Reload application
+        <button
+          onClick={() => {
+            try {
+              localStorage.removeItem(this.props.storageKey);
+            } catch {
+              /* Storage can be unavailable. */
+            }
+            this.setState({ failed: false });
+          }}
+        >
+          Reset saved view
         </button>
       </div>
     ) : (

@@ -1,5 +1,7 @@
 ﻿# Performance and accessibility review
 
+> Historical snapshot of the pre-remediation implementation. These findings describe that revision, not current behavior. See [current measurements](PERFORMANCE.md) and [remediation outcomes](audits/REMEDIATION.md).
+
 Independent review of the local React 19.3 / AG Grid Community 36.1 implementation, 2026-09-11. Source inspection plus Playwright Chromium against the Vite development server. Measurements are local observations, not production benchmarks or FPS guarantees.
 
 ## Measured behavior

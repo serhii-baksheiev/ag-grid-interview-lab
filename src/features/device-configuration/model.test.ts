@@ -44,6 +44,16 @@ describe('device configuration rules', () => {
         .length,
     ).toBeGreaterThan(0);
   });
+  it.each([
+    ['minimum', 1, false],
+    ['maximum', 3600, false],
+    ['below minimum', 0, true],
+    ['above maximum', 3601, true],
+    ['fractional', 1.5, true],
+  ])('treats %s sampling interval as %s', (_, samplingInterval, invalid) => {
+    const errors = validateDevice({ ...device(), samplingInterval });
+    expect('samplingInterval' in errors).toBe(invalid);
+  });
   it('marks only new or changed configuration as dirty', () => {
     const saved = device();
     expect(isDirty({ ...saved }, saved)).toBe(false);

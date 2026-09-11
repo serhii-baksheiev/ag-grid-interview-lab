@@ -65,6 +65,10 @@ export default function DeviceConfiguration() {
       ...defaultColDef,
       valueSetter: setValue,
       editable: () => !savingRef.current,
+      suppressKeyboardEvent: ({ event }) =>
+        savingRef.current &&
+        (event.ctrlKey || event.metaKey) &&
+        ['z', 'y'].includes(event.key.toLowerCase()),
       cellClassRules: {
         'cell-error': (params) =>
           !!params.data &&
@@ -233,7 +237,7 @@ export default function DeviceConfiguration() {
         Enter or double-click to edit · Tab to move · Checkbox to select rows ·
         Warning &lt; critical · Sampling: 1–3,600 seconds
       </div>
-      <p aria-live="polite">
+      <p aria-live="polite" aria-atomic="true">
         <strong>{dirtyCount} unsaved changes</strong> · {selected.length}{' '}
         selected
       </p>
@@ -241,6 +245,7 @@ export default function DeviceConfiguration() {
         <p
           className={saveError ? 'error' : 'notice'}
           role={saveError ? 'alert' : 'status'}
+          aria-atomic="true"
         >
           {message}
         </p>
@@ -275,10 +280,12 @@ export default function DeviceConfiguration() {
             Stage deletion of {deleteIds.length} selected devices? Revert all
             can restore them until saved.
           </p>
-          <button autoFocus onClick={confirmDelete} disabled={saving}>
+          <button onClick={confirmDelete} disabled={saving}>
             Confirm deletion
           </button>
-          <button onClick={cancelDelete}>Cancel deletion</button>
+          <button autoFocus onClick={cancelDelete}>
+            Cancel deletion
+          </button>
         </div>
       )}
       <div className="grid-frame">
@@ -298,7 +305,10 @@ export default function DeviceConfiguration() {
           initialState={gridState.initialState}
           onStateUpdated={gridState.onStateUpdated}
           onGridPreDestroyed={gridState.onGridPreDestroyed}
-          onGridReady={(event) => setApi(event.api)}
+          onGridReady={(event) => {
+            event.api.setGridAriaProperty('label', 'Device configuration grid');
+            setApi(event.api);
+          }}
           onSelectionChanged={(event) =>
             setSelected(event.api.getSelectedRows().map((row) => row.id))
           }
@@ -307,8 +317,8 @@ export default function DeviceConfiguration() {
           }}
         />
       </div>
-      <details className="panel">
-        <summary>Unsaved change list ({dirtyCount})</summary>
+      <section className="panel unsaved-list" aria-label="Unsaved change list">
+        <h2>Unsaved change list ({dirtyCount})</h2>
         {dirtyCount === 0 ? (
           <p>No pending changes.</p>
         ) : (
@@ -323,10 +333,11 @@ export default function DeviceConfiguration() {
             ))}
           </ul>
         )}
-      </details>
+      </section>
       <p className="footnote">
-        Undo/redo covers cell edits; sorting, filtering and row replacement
-        clear its history. Browser text copy and paste inside editors are
+        Undo/redo covers cell edits. Sorting, filtering, row replacement and
+        column layout or visibility changes clear its history. Undo/Redo is
+        locked during Save. Browser text copy and paste inside editors are
         available. Grid range selection and bulk clipboard operations require
         Enterprise.
       </p>
