@@ -15,8 +15,9 @@ type ProbeWindow = Window & { __responsiveness?: Probe };
 /**
  * Measure main-thread availability while the page does work: long tasks from
  * the browser's own observer plus the drift of a 16 ms timer. Both are
- * browser-level signals, not micro-benchmarks, and bounded in the test with a
- * budget generous enough for CI noise while far below an unyielding scan.
+ * browser-level signals recorded as test evidence, not asserted: they depend on
+ * the machine running the suite. Firefox reports no `longtask` entries, so
+ * `longestTaskMs` is 0 there.
  */
 export async function startResponsivenessProbe(page: Page) {
   await page.evaluate(() => {
