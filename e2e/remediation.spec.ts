@@ -551,8 +551,10 @@ test('does not apply Ctrl+Z while a pessimistic save is pending', async ({
   await openView(page, 'Device Configuration');
   await visibleGrid(page);
   await renameFirstDevice(page, 'Save remains stable');
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  // A fixed epoch: `pauseAt(new Date())` after `install()` raced the two clocks
+  // and failed on CI with "Cannot fast-forward to the past".
+  await page.clock.install({ time: new Date('2026-09-14T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-09-14T12:00:01Z'));
   await page.getByRole('button', { name: 'Save all', exact: true }).click();
   await expect(
     page.getByText('Saving changes…', { exact: true }),
