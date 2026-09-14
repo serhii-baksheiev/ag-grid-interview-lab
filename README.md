@@ -110,14 +110,15 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
-npx playwright install --with-deps chromium
+npm run check:bundle
+npx playwright install --with-deps chromium firefox
 npm run test:e2e
 npm audit --omit=dev
 ```
 
-Vitest covers domain rules, query correctness, datasource lifecycle, malformed storage and component interactions. Playwright runs Chromium against a dedicated production preview on port **4176**; it refuses to reuse an unrelated server. `npm run test:e2e` builds first so the preview never serves a stale `dist/`; CI builds once and runs `npm run test:e2e:ci`, which only starts the preview. Tests cover retry, typing races, theme persistence, keyboard editing, narrow viewports and axe accessibility checks, and every test fails on an uncaught exception, console error or AG Grid warning.
+Vitest covers domain rules, query correctness, datasource lifecycle, malformed storage and component interactions. Playwright runs the same suite in Chromium and Firefox against a dedicated production preview on port **4176**; it refuses to reuse an unrelated server. Pass `-- --project=chromium` or `-- --project=firefox` to run one browser. `npm run test:e2e` builds first so the preview never serves a stale `dist/`; CI builds once and runs `npm run test:e2e:ci`, which only starts the preview. Tests cover retry, typing races, theme persistence, keyboard editing, narrow viewports and axe accessibility checks, and every test fails on an uncaught exception, console error or AG Grid warning.
 
-The [CI workflow](.github/workflows/ci.yml) runs quality and E2E jobs for PRs and pushes to `main`. Separate `test:unit` and `test:integration` scripts are available for focused work.
+The [CI workflow](.github/workflows/ci.yml) runs a quality job (including the bundle budget) and separate Chromium and Firefox E2E jobs for PRs and pushes to `main`. `npm run check:bundle` fails when the built JavaScript's gzip size exceeds the baseline recorded in `scripts/bundle-budget.json` by more than 5%. Separate `test:unit` and `test:integration` scripts are available for focused work.
 
 ## Documentation
 

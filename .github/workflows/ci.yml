@@ -32,6 +32,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Fails when the built JavaScript's gzip size grows more than 5% above the
+      # baseline recorded in scripts/bundle-budget.json.
+      - run: npm run check:bundle
       - run: npm audit --omit=dev
 
   e2e:
@@ -50,10 +53,35 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       # The build above is the one under test; the CI script does not rebuild.
-      - run: npm run test:e2e:ci
+      - run: npm run test:e2e:ci -- --project=chromium
       - uses: actions/upload-artifact@v7.0.1
         if: failure()
         with:
           name: playwright-failure
+          path: test-results/
+          retention-days: 7
+
+  e2e-firefox:
+    name: E2E Firefox
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps firefox
+      - run: npm run build
+      # Firefox schedules MessageChannel tasks, timers and rendering differently
+      # from Chromium; the same suite runs against the same build.
+      - run: npm run test:e2e:ci -- --project=firefox
+      - uses: actions/upload-artifact@v7.0.1
+        if: failure()
+        with:
+          name: playwright-failure-firefox
           path: test-results/
           retention-days: 7
