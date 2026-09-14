@@ -1,4 +1,4 @@
-# ag-grid-interview-lab — plan and work queues
+# AG Grid IoT Lab — plan and work queues
 
 Work in this project has a stated origin: one of the two queues below. An
 agent session picks from the **Agent queue** (see the `loop` skill); anything

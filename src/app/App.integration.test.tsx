@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from '@testing-library/react';
 import { App } from './App';
 import { generateDevices } from '../shared/data/generator';
@@ -19,6 +20,22 @@ afterEach(() => {
 });
 
 describe('IoT console integration', () => {
+  it('presents a neutral IoT Lab identity and exactly four product scenarios', () => {
+    render(<App />);
+
+    expect(screen.getByText('AG Grid IoT Lab', { exact: true })).toBeVisible();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main navigation' }))
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'Live Telemetry',
+      'Historical Logs',
+      'Device Configuration',
+      'Analytics',
+    ]);
+  });
+
   it('provides initial live data and allows the stream to stop', async () => {
     render(<App />);
     expect(await screen.findByRole('grid')).toBeInTheDocument();

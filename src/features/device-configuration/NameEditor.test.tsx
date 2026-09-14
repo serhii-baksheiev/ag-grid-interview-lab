@@ -16,9 +16,9 @@ it('keeps typing whitespace visible but submits a parsed name and identifies inv
   );
   const input = screen.getByRole('textbox', { name: 'Device name editor' });
   expect(input).toHaveFocus();
-  fireEvent.change(input, { target: { value: '  Interview sensor  ' } });
-  expect(input).toHaveValue('  Interview sensor  ');
-  expect(onValueChange).toHaveBeenLastCalledWith('Interview sensor');
+  fireEvent.change(input, { target: { value: '  Reference sensor  ' } });
+  expect(input).toHaveValue('  Reference sensor  ');
+  expect(onValueChange).toHaveBeenLastCalledWith('Reference sensor');
   fireEvent.change(input, { target: { value: '   ' } });
   expect(input).toHaveAttribute('aria-invalid', 'true');
 });
