@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * Follow `value` only once it has stayed unchanged for `delayMs`. `flush(next)`
  * applies a value at once and cancels the pending update, for changes that
- * should not wait (such as clearing a search on reset).
+ * should not wait (such as clearing a search on reset). Pass the value the
+ * input now holds: a flushed value is not revisited until the input changes.
  */
 export function useDebouncedValue<T>(
   value: T,

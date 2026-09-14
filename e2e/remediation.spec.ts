@@ -704,18 +704,24 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
   );
 });
 
-test('filters the live grid to a single sensor by search, then clears it', async ({
+test('filters the live grid by search once typing stops, then clears it', async ({
   page,
 }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Pause stream' }).click();
-  const target = generateDevices(2)[1]!.name;
   const search = page.getByLabel('Search live', { exact: true });
-  await search.fill(target);
-  const nameCells = page.locator('[role="gridcell"][col-id="name"]');
-  await expect(nameCells).toHaveCount(1);
-  await expect(nameCells.first()).toHaveText(target);
+  const locations = page.locator('[role="gridcell"][col-id="location"]');
+  await expect(locations.first()).toBeVisible();
+  const distinctLocations = async () => [
+    ...new Set(await locations.allTextContents()),
+  ];
+  // The quick filter matches each space-separated word against every visible
+  // value, including computed numbers; words keep the expected set exact.
+  await search.fill('Cold storage');
+  await expect.poll(distinctLocations).toEqual(['Cold storage']);
 
   await search.fill('');
-  await expect.poll(async () => nameCells.count()).toBeGreaterThan(1);
+  await expect
+    .poll(async () => (await distinctLocations()).length)
+    .toBeGreaterThan(1);
 });

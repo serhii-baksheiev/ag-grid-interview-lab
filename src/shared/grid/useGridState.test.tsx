@@ -112,6 +112,31 @@ describe('useGridState skips a write when the persisted payload is unchanged', (
     expect(setItem).toHaveBeenCalledTimes(1);
   });
 
+  it('writes on the first event when storage holds a different payload', () => {
+    localStorage.setItem('iot-lab:v1:history', serializeState(sortAsc));
+    const { result } = renderHook(() => useGridState('history'));
+    setItem.mockClear();
+    act(() => result.current.onStateUpdated(stateUpdated(sortDesc)));
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('compares with the stored payload of the new key after the key changes', () => {
+    const { result, rerender } = renderHook(({ name }) => useGridState(name), {
+      initialProps: { name: 'history' },
+    });
+    act(() => result.current.onStateUpdated(stateUpdated(sortDesc)));
+    localStorage.setItem('iot-lab:v1:live', serializeState(sortDesc));
+    setItem.mockClear();
+    rerender({ name: 'live' });
+    act(() => result.current.onStateUpdated(stateUpdated(sortDesc)));
+    expect(setItem).not.toHaveBeenCalled();
+    act(() => result.current.onStateUpdated(stateUpdated(sortAsc)));
+    expect(setItem).toHaveBeenLastCalledWith(
+      'iot-lab:v1:live',
+      serializeState(sortAsc),
+    );
+  });
+
   it('saveView always writes its own :saved key, even when identical to the last write', () => {
     const { result } = renderHook(() => useGridState('history'));
     const api = fakeApi(sortDesc);

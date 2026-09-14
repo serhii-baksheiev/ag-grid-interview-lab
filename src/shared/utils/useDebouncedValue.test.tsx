@@ -80,5 +80,6 @@ describe('useDebouncedValue', () => {
     const callsBeforeUnmount = clearSpy.mock.calls.length;
     unmount();
     expect(clearSpy.mock.calls.length).toBeGreaterThan(callsBeforeUnmount);
+    clearSpy.mockRestore();
   });
 });

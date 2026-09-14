@@ -74,7 +74,7 @@ Live timers stop on unmount, and pending transactions are flushed. Each deferred
 
 Configuration stays mounted after the first visit so drafts and an in-progress save survive navigation. It does not run a background stream. A save disables editing and mutation controls until completion, and the baseline only advances after success. Unmount clears its save timer. A `beforeunload` handler warns while dirty rows exist; no configuration rows are stored in localStorage.
 
-Grid State serialization retains only view-related sections, caps input length and validates stored shapes. Storage writes are synchronous and errors are caught; a write is skipped when the serialized sections equal the stored text, so scroll, focus and selection events do not rewrite localStorage. Serialization has no explicit output-size cap. Debounce persistence only if profiling shows a meaningful cost during resizing. Avoid storing row selection, scroll state and full row datasets unnecessarily.
+Grid State serialization retains only view-related sections, caps input length and validates stored shapes. Storage writes are synchronous and errors are caught; a write is skipped when the serialized sections equal the text this screen last read or wrote, so scroll, focus and selection events do not rewrite localStorage. Serialization has no explicit output-size cap. Debounce persistence only if profiling shows a meaningful cost during resizing. Avoid storing row selection, scroll state and full row datasets unnecessarily.
 
 ## Accessibility corrections and validation
 
