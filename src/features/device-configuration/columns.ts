@@ -3,8 +3,34 @@ import type { Device } from '../../shared/types';
 import { locations } from '../../shared/data/generator';
 import { formatNumber, formatTimestamp } from '../../shared/utils/format';
 import { statusRenderer } from '../../shared/grid/base';
-import { parseNumber } from './model';
+import { fieldError, parseNumber } from './model';
 import { NameEditor } from './NameEditor';
+
+interface EditorValidationParams {
+  value: unknown;
+  cellEditorParams: { data: Device };
+  internalErrors: string[] | null;
+}
+/**
+ * The provided editors' `getValidationErrors` hook, answered by the domain rule
+ * for one field. With `invalidEditValueMode="block"` an error keeps the editor
+ * open, and the grid marks its input `aria-invalid` and announces the message.
+ * The editor's own errors (for example an unknown select value) come first.
+ */
+function domainValidation(
+  field: keyof Device,
+  parse: (value: unknown) => unknown = (value) => value,
+) {
+  return ({
+    value,
+    cellEditorParams,
+    internalErrors,
+  }: EditorValidationParams) => {
+    const error = fieldError(cellEditorParams.data, field, parse(value));
+    const errors = [...(internalErrors ?? []), ...(error ? [error] : [])];
+    return errors.length ? errors : null;
+  };
+}
 
 export function configurationColumns(): ColDef<Device>[] {
   const numeric = (
@@ -15,6 +41,10 @@ export function configurationColumns(): ColDef<Device>[] {
     headerName,
     width: 165,
     cellEditor: 'agNumberCellEditor',
+    // An empty input reaches the hook as NaN, which the domain rule rejects.
+    cellEditorParams: {
+      getValidationErrors: domainValidation(field, parseNumber),
+    },
     valueParser: (params) => parseNumber(params.newValue),
     valueFormatter: (params) => formatNumber(params.value),
     filter: 'agNumberColumnFilter',
@@ -32,7 +62,10 @@ export function configurationColumns(): ColDef<Device>[] {
       field: 'location',
       width: 175,
       cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: locations },
+      cellEditorParams: {
+        values: locations,
+        getValidationErrors: domainValidation('location'),
+      },
     },
     {
       field: 'enabled',

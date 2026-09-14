@@ -302,8 +302,10 @@ export default function DeviceConfiguration() {
           getRowId={getRowId}
           rowSelection={rowSelection}
           rowClassRules={rowClassRules}
-          // An editor reporting validation errors (NameEditor) keeps its editor
-          // open on commit; the grid marks it invalid and announces the error.
+          // Every validated editor (NameEditor, and the number and select editors
+          // through columns.ts) keeps an invalid commit open; the grid marks the
+          // input invalid and announces the domain error. The valueSetter still
+          // validates writes that bypass an editor, such as a Delete-key clear.
           invalidEditValueMode="block"
           undoRedoCellEditing
           undoRedoCellEditingLimit={30}
