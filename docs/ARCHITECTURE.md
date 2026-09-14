@@ -29,7 +29,11 @@ The complete current fleet is available in memory, so the Client-Side Row Model 
 
 Metrics use refs for stream counters and update React separately from every individual event. Timer cleanup stops input and flushes pending grid work when appropriate. Column definitions and shared grid props keep stable references. Rendering uses ordinary formatting where possible and a small status renderer where visual semantics justify it.
 
-Stable IDs keep updates attached to devices after sorting; display indices cannot do that. Async batching trades a short display delay for fewer repeated model passes. Occasional manual updates can use synchronous transactions. Coalescing a faster stream to the latest event per device would reduce work but discard intermediate states, so it requires an explicit product decision. Received and applied counters measure different pipeline stages.
+Stable IDs keep updates attached to devices after sorting; display indices cannot do that. Async batching trades a short display delay for fewer repeated model passes. Occasional manual updates can use synchronous transactions.
+
+No application coalescing queue is added: a tick visits each selected stable ID once, caps updates at the fleet size and submits one transaction. The fastest configured tick is 100 ms, longer than the unchanged 50 ms grid window. Delayed scheduling can still group transactions; batching does not promise latest-value deduplication. There is no measured benefit to another queue here. A faster external stream would need an explicit policy for intermediate status events before retaining only the latest measurement per device.
+
+Diagnostics sample cumulative ref counters once per second, dividing deltas by actual elapsed monotonic time. Incoming updates count submitted telemetry rows; applied updates count rows confirmed by transaction callbacks, including repeated updates to the same ID. Async batches count `asyncTransactionsFlushed` events, one per completed group rather than one per transaction or row; this grid-wide metric includes reset/resize work. Totals and sampling restart on data reset. Rates are observed throughput, not configured targets or render/FPS measurements. The fleet count is the selected dataset size (the target while resizing), not a visible-row count.
 
 ## Historical queries
 
@@ -94,9 +98,19 @@ Filtering summary rows does not recalculate the underlying sample. Combining gro
 
 `initialState` is read on grid construction, not on every render. Partial column-state restoration sets `partialColumnState`. Analytics also provides explicit saved-view restoration. Reset State clears column/filter changes. Theme has its own independent key.
 
+### State ownership
+
+Application code owns domain generation, configuration drafts and saved baselines, business validation, async save/error state and query inputs. React owns screen controls and sampled diagnostics. Live row objects are updated through transactions and configuration drafts support grid-driven mutation; application ownership does not mean copying every row update into React state. Permissions would belong at the application/server boundary in production; this demo implements no permission system or durable configuration backend.
+
+AG Grid owns live presentation state: column widths, order, visibility and pinning; sorting and column filters; focused cells, transient editing, viewport and scroll mechanics. This state remains grid-owned because the grid coordinates these interactions internally. React controls may issue API commands and read the small values needed by their UI (for example the Location checkbox), but the complete presentation state is intentionally not continuously mirrored into React. Duplicating it would add synchronization complexity and unnecessary rerenders.
+
+Selected grid preferences are externalized as snapshots because they should survive grid reconstruction. `useGridState` writes the sections listed above to localStorage on state updates and before destruction; `storage.ts` validates and reconstructs supported fields when reading them. The version and partial-column-state metadata support restoration. Focus, editing, scroll, selection and row data are not persisted. A production backend could store the same validated preferences, while AG Grid would remain their live owner; storage is a restoration boundary, not a second presentation-state controller.
+
 ## Cell presentation boundaries
 
 Direct properties use `field`; computed values belong in pure getters that retain numeric types. Formatters change display text without rounding stored measurements, and cached `Intl` formatters avoid per-cell construction. A small React status renderer adds readable text and styling without owning data or performing requests. Provided editors cover numbers, booleans and short option lists; richer selection UI is an edition trade-off described in the [feature matrix](FEATURE_MATRIX.md).
+
+Live `columns.ts` makes the distinction concrete: Sensor reads `field: 'name'`; `warningDelta` uses `valueGetter` for reading minus warning threshold, in the row's measurement unit (negative means below warning). Reading and delta use `valueFormatter` because numeric values must remain usable for sorting and number filtering. Cross-sensor delta comparisons still mix units; filter by sensor type for meaningful comparisons. Status uses `cellRenderer` for the existing badge UI. A getter derives a value; a formatter supplies text; only the badge needs a React renderer.
 
 Parsing converts input, while domain validation determines whether it is acceptable. An empty numeric input must not silently become a valid zero. Memoization stabilizes grid props where reference identity matters; it does not make an expensive calculation cheap. DOM virtualization bounds rendered cells, not query CPU or model memory; the [performance report](PERFORMANCE.md) separates those costs.
 
