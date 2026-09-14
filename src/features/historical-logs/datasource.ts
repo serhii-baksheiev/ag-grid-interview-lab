@@ -60,7 +60,20 @@ export function createHistoryDatasource(options: {
         params.failCallback();
         return;
       }
-      const query = JSON.stringify([params.filterModel, params.sortModel]);
+      let query: string;
+      try {
+        query = JSON.stringify([params.filterModel, params.sortModel]);
+      } catch {
+        // A model JSON cannot encode (cyclic, BigInt) is outside the query grammar.
+        failed = true;
+        failure = 'unsupported';
+        try {
+          params.failCallback();
+        } finally {
+          emit();
+        }
+        return;
+      }
       if (signature !== query) {
         signature = query;
         generation++;

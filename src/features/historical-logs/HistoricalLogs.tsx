@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import type { ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
+import type { GridApi, GridReadyEvent } from 'ag-grid-community';
 import type { Telemetry } from '../../shared/types';
 import { defaultColDef, gridTheme } from '../../shared/grid/base';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { formatNumber } from '../../shared/utils/format';
-import { historyColumns, historyFilterParams } from './columns';
+import { historyColumns, historyDefaultColDef } from './columns';
 import { createHistoryDatasource, type DatasourceStatus } from './datasource';
 
 const initialStatus: DatasourceStatus = {
@@ -35,14 +35,6 @@ export default function HistoricalLogs() {
     undefined,
   );
   const state = useGridState('history', filterSchema);
-  const defaults = useMemo<ColDef<Telemetry>>(
-    () => ({
-      ...defaultColDef,
-      floatingFilter: true,
-      filterParams: historyFilterParams,
-    }),
-    [],
-  );
   const onGridReady = useCallback((event: GridReadyEvent<Telemetry>) => {
     event.api.setGridAriaProperty('label', 'Historical measurements grid');
     api.current = event.api;
@@ -170,7 +162,9 @@ export default function HistoricalLogs() {
       </div>
       <p className="sr-only" role="status" aria-atomic="true">
         {status.error
-          ? 'Historical request failed.'
+          ? status.failure === 'unsupported'
+            ? 'Historical filters cannot be applied.'
+            : 'Historical request failed.'
           : status.pending
             ? 'Loading historical records.'
             : status.total === undefined
@@ -225,7 +219,7 @@ export default function HistoricalLogs() {
         <AgGridReact<Telemetry>
           theme={gridTheme}
           columnDefs={historyColumns}
-          defaultColDef={defaults}
+          defaultColDef={historyDefaultColDef}
           // No getRowId: the Infinite Row Model would use it for RowNode ids,
           // but nothing here selects or looks rows up by id, so rows keep the
           // grid's block-position ids.

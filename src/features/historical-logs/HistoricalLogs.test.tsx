@@ -94,6 +94,14 @@ describe('Historical Logs screen', () => {
     );
     expect(alert.textContent).toMatch(/clear them|Reset State/i);
     expect(alert.textContent).not.toContain('Disable error simulation');
+    // The screen-reader status names the same cause as the visible alert.
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((element) =>
+          /cannot be applied/i.test(element.textContent ?? ''),
+        ),
+    ).toBe(true);
   });
 
   it('keeps the request-failure message and Retry button for a simulated request failure', () => {

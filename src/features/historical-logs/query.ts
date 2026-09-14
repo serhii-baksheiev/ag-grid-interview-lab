@@ -199,7 +199,8 @@ function compile<T>(
       throw new UnsupportedQueryError(
         'A combined filter has one or two conditions',
       );
-    const conditions = model.conditions.map((condition) =>
+    // Array.from visits holes as undefined, which compile rejects; map would skip them.
+    const conditions = Array.from(model.conditions, (condition) =>
       compile(condition, view, filterType),
     );
     if (model.operator === 'OR')

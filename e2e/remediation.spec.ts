@@ -757,13 +757,11 @@ test('filters the live grid to one location by search, then clears it', async ({
   await search.fill('Cold storage');
   await expect.poll(distinctLocations).toEqual(['Cold storage']);
 
-  // After clearing, only the currently rendered rows are checked (this is a
-  // virtualized grid, not the full dataset), and the seeded fleet is
-  // generated unsorted with North Plant devices first, so the rendered
-  // window is expected to already span more than one location as soon as
-  // filtering lifts. This does not depend on the search debounce having
-  // elapsed by any particular moment; that timing is covered separately in
-  // LiveTelemetry.test.tsx.
+  // After clearing, only the rendered rows are checked (the grid is
+  // virtualised). The fleet is seeded in blocks of six devices per location
+  // (North plant first, then Cold storage), so an unsorted rendered window
+  // spans more than one location once the filter lifts. The search debounce
+  // itself is covered in LiveTelemetry.test.tsx.
   await search.fill('');
   await expect
     .poll(async () => (await distinctLocations()).length)

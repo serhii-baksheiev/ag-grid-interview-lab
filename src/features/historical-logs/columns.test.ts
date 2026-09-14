@@ -1,15 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { defaultColDef } from '../../shared/grid/base';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
-import { historyColumns, historyFilterParams } from './columns';
+import {
+  historyColumns,
+  historyDefaultColDef,
+  historyFilterParams,
+} from './columns';
 
 describe('Historical Logs columns', () => {
-  it('shares one filterParams object across every column-level filter', () => {
+  it('shares one filterParams object between the grid defaults and its column copies', () => {
     expect(historyFilterParams).toEqual({
       debounceMs: 350,
       maxNumConditions: 2,
       inRangeInclusive: true,
     });
+    // The module-static defaults reference the shared object; a column that
+    // needs more (timestamp's includeTime) spreads its own copy.
+    expect(historyDefaultColDef).toMatchObject({
+      ...defaultColDef,
+      floatingFilter: true,
+    });
+    expect(historyDefaultColDef.filterParams).toBe(historyFilterParams);
+    const timestamp = historyColumns.find(
+      (column) => column.field === 'timestamp',
+    );
+    expect(timestamp?.filterParams).not.toBe(historyFilterParams);
   });
 
   it('reads the timestamp as a UTC date-time, with time included in its own filter', () => {

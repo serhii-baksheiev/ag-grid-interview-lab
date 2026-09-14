@@ -1,6 +1,6 @@
 import type { ColDef } from 'ag-grid-community';
 import type { Telemetry } from '../../shared/types';
-import { statusRenderer } from '../../shared/grid/base';
+import { defaultColDef, statusRenderer } from '../../shared/grid/base';
 import { formatNumber, formatTimestamp } from '../../shared/utils/format';
 
 // A column-level filterParams replaces the default object, so share the base.
@@ -8,6 +8,12 @@ export const historyFilterParams = {
   debounceMs: 350,
   maxNumConditions: 2,
   inRangeInclusive: true,
+};
+// Module-static like the columns: the grid receives one stable object.
+export const historyDefaultColDef: ColDef<Telemetry> = {
+  ...defaultColDef,
+  floatingFilter: true,
+  filterParams: historyFilterParams,
 };
 export const historyColumns: ColDef<Telemetry>[] = [
   {

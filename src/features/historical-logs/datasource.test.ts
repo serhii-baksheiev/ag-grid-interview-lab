@@ -229,6 +229,33 @@ describe('asynchronous historical datasource', () => {
     expect(onStatus.mock.lastCall?.[0].failure).toBeUndefined();
     source.destroy?.();
   });
+  it('fails a request whose filter model cannot be serialised, without throwing from getRows', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => false,
+      onStatus,
+    });
+    const cyclic: Record<string, unknown> = {
+      filterType: 'text',
+      type: 'contains',
+      filter: 'device',
+    };
+    cyclic.self = cyclic;
+    const params = request(0, { deviceId: cyclic });
+    expect(() => source.getRows(params)).not.toThrow();
+    await vi.runAllTimersAsync();
+    expect(params.successCallback).not.toHaveBeenCalled();
+    expect(params.failCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 0,
+      error: true,
+      failure: 'unsupported',
+    });
+    source.destroy?.();
+  });
   it('settles calls queued after destruction exactly once', () => {
     const source = createHistoryDatasource({
       total: 100,

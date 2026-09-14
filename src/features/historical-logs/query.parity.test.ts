@@ -929,6 +929,15 @@ describe('unsupported query models fail closed instead of silently matching', ()
   ] as const)('rejects %s', (_, column, model) =>
     expectUnsupported({ [column]: model }),
   );
+  it('rejects a combined model whose conditions array has holes', () =>
+    expectUnsupported({
+      value: {
+        filterType: 'number',
+        operator: 'AND',
+        // Not encodable in JSON, but a sparse array would otherwise compile no leaf.
+        conditions: new Array(2),
+      },
+    }));
   it('rejects a sort on an unknown column', () =>
     expectUnsupported({}, [{ colId: 'ghost', sort: 'asc' }]));
   it('rejects a sort direction other than asc or desc', () =>
