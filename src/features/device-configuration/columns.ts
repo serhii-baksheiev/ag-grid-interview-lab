@@ -1,4 +1,4 @@
-import type { ColDef } from 'ag-grid-community';
+import type { ColDef, IErrorValidationParams } from 'ag-grid-community';
 import type { Device } from '../../shared/types';
 import { locations } from '../../shared/data/generator';
 import { formatNumber, formatTimestamp } from '../../shared/utils/format';
@@ -6,11 +6,6 @@ import { statusRenderer } from '../../shared/grid/base';
 import { fieldError, parseNumber } from './model';
 import { NameEditor } from './NameEditor';
 
-interface EditorValidationParams {
-  value: unknown;
-  cellEditorParams: { data: Device };
-  internalErrors: string[] | null;
-}
 /**
  * The provided editors' `getValidationErrors` hook, answered by the domain rule
  * for one field. With `invalidEditValueMode="block"` an error keeps the editor
@@ -25,7 +20,7 @@ function domainValidation(
     value,
     cellEditorParams,
     internalErrors,
-  }: EditorValidationParams) => {
+  }: IErrorValidationParams<Device, unknown>) => {
     const error = fieldError(cellEditorParams.data, field, parse(value));
     const errors = [...(internalErrors ?? []), ...(error ? [error] : [])];
     return errors.length ? errors : null;

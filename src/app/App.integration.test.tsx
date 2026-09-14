@@ -314,5 +314,39 @@ describe('invalid threshold and sampling commits', () => {
       screen.getByText('0 unsaved changes', { exact: true }),
     ).toBeInTheDocument();
     expect(cell).toHaveTextContent(formatNumber(original.warningThreshold));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss validation' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('refuses to save while an invalid edit is still open', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = generateDevices(1)[0]!;
+    await screen.findByRole('gridcell', { name: original.name });
+    fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+    const cell = document.querySelector(
+      "[row-id='device-00001'] [col-id='warningThreshold']",
+    );
+    fireEvent.click(cell!);
+    fireEvent.keyDown(cell!, { key: 'Enter' });
+    const editor = await screen.findByRole('spinbutton');
+    fireEvent.input(editor, {
+      target: { value: String(original.criticalThreshold + 1) },
+    });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
+    // Block mode keeps the invalid editor open, so the save must not report success.
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Correct invalid values before saving.',
+    );
+    expect(screen.queryByText('Saving changes…')).not.toBeInTheDocument();
+    expect(screen.getByRole('spinbutton')).toBe(editor);
   });
 });

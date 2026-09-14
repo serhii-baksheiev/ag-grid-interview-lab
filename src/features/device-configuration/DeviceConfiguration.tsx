@@ -126,6 +126,12 @@ export default function DeviceConfiguration() {
   function save(ids?: string[]) {
     if (savingRef.current) return;
     api?.stopEditing();
+    // Block mode keeps an invalid editor open; its draft has not reached the rows.
+    if (api?.getEditingCells().length) {
+      setSaveError(true);
+      setMessage('Correct invalid values before saving.');
+      return;
+    }
     const selectedIds = ids ? new Set(ids) : undefined;
     const targets = rows.filter(
       (row) => !selectedIds || selectedIds.has(row.id),
