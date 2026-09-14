@@ -29,13 +29,30 @@ The benchmark now rejects unrelated errors, a query that resolves without cancel
 
 Raw runs are saved locally to ignored `.claude/runs/history-<label>.json`. A separate production-preview E2E verifies the complete grid sort workflow; its duration includes UI work and should not be compared directly with these isolated numbers.
 
-Selective Community module registration reduced the production JavaScript from 1,370.96 kB / 389.92 kB gzip to 1,237.06 kB / 354.23 kB gzip (about 9% less gzip). The initial screen uses the same grid library as the other screens, so splitting a vendor chunk alone would not reduce initial downloaded bytes. Screen lazy loading was considered but not added without evidence of further worthwhile savings. The size warning remains visible; no limit was raised to hide it.
+Selective Community module registration reduced the production JavaScript from 1,370.96 kB / 389.92 kB gzip to 1,237.06 kB / 354.23 kB gzip (about 9% less gzip) at the time of that change. The current build (2026-09-14, with `DateFilterModule` registered for the historical timestamp filter and `EventApiModule` for the column-visibility listener) emits 1,254.88 kB / 359.04 kB gzip of JavaScript and 12.73 kB / 3.59 kB gzip of CSS; the figure moves with every dependency or module change, so read `npm run build` output rather than this paragraph for the number of the day. The initial screen uses the same grid library as the other screens, so splitting a vendor chunk alone would not reduce initial downloaded bytes. Screen lazy loading was considered but not added without evidence of further worthwhile savings. The size warning remains visible; no limit was raised to hide it.
 
 ### Live 10k reset
 
 The first baseline reset of a paused 10,000-row fleet produced long tasks of 609 and 255 ms; warm repeats measured 108 and 84 ms. After reusing the seeded baseline and restoring only changed rows, three paused resets produced no observed tasks over the browser's 50 ms long-task threshold (wall 119 / 126 / 79 ms, including automation and paints). Run `node scripts/live-benchmark.mjs` with production preview on port 4175.
 
 Reset and resize now submit at most 200 rows per operation type per transaction, waiting for each async batch before queuing the next. This trades total completion time for responsiveness: a heavily changed 10k fleet or resize can take several seconds. Reset controls show a pending state, streaming pauses its updates during the operation, and grid sorting/filtering still contributes work to each batch. The paused-reset figures do not guarantee a sub-200 ms task for every active/sorted workload. The 10k stress E2E checks reset completion after streaming and a subsequent resize to 1k.
+
+### Live stream with a sorted view
+
+The figures above describe an unsorted stream. Sorting changes the cost class. When the values that change on every tick also decide the row order — Reading sorted ascending while 1,000 readings per tick change — each 50 ms async batch must re-run the sort and reorder rows in the model, and the visible rows may be replaced rather than updated in place. Async transactions still coalesce the batch's work into one model pass, but they cannot remove the cost of keeping a continuously sorted view of 10,000 changing rows. Filtering on a changing value has the same shape.
+
+Measured on 2026-09-14 with `node scripts/live-stream-benchmark.mjs` against the production preview (Windows 11, Playwright Chromium, 1440×1080, 10,000 devices, 100 ms tick, 1,000 changes per tick, burst enabled; the stream was paused, sorted, then restarted). Each row is one observation window; long tasks are the browser's `longtask` entries (> 50 ms) and drift is the worst lateness of a 16 ms timer.
+
+| Window | View              | Long tasks | Longest, ms | Median, ms | Total, ms | Max timer drift, ms |
+| ------ | ----------------- | ---------- | ----------- | ---------- | --------- | ------------------- |
+| 10 s   | unsorted          | 0          | 0           | 0          | 0         | 21                  |
+| 10 s   | sorted by Reading | 3          | 60          | 59         | 175       | 92                  |
+| 15 s   | unsorted          | 0          | 0           | 0          | 0         | 26                  |
+| 15 s   | sorted by Reading | 15         | 74          | 54         | 843       | 91                  |
+| 15 s   | unsorted          | 0          | 0           | 0          | 0         | 15                  |
+| 15 s   | sorted by Reading | 3          | 78          | 58         | 186       | 92                  |
+
+An independent audit of the same configuration on another day observed repeated 51–114 ms long tasks and larger timer drift; the long-task count varies noticeably between windows on the same machine, so treat the sorted rows as "tens of milliseconds per batch, repeatedly, with visible timer drift", not as a bound. These are single-machine observations: another CPU, a busier browser or a different value distribution moves every number. What does not move is the shape — unsorted streaming produced no long task in any window, sorted streaming produced them in every window. If a sorted live view is a product requirement, the options are a slower tick or fewer changes per tick, sorting on a value that changes rarely, or a coarser batch window; none of them is a code fix in this repository.
 
 ## Where work happens
 
@@ -65,7 +82,7 @@ The independent review caught a CSS import-order defect that made the mobile sid
 
 Deletion cancellation now returns keyboard focus to **Delete selected**; confirmation moves it to **Add device**. Escape cancels the inline confirmation. It is not presented as a modal focus trap. Dark active-stream and eyebrow text have lighter overrides. Status badges contain words, not only color. Native controls have labels, a skip link and visible focus styles; the chart has a textual accessible description.
 
-Browser tests capture console errors and uncaught page errors before navigation. This is not a complete WCAG or assistive-technology certification. Exact React render counts, sustained heap growth, screen-reader output, production CPU use and frame rates remain unmeasured.
+Browser tests capture console errors, uncaught page errors and AG Grid warnings (`console.warn` messages prefixed `AG Grid:`) before navigation, so a restored filter the column cannot hold or a missing module fails the test that provoked it. Other browser warnings are deliberately not captured. The 500k sort test also measures the main thread while the scan runs — the longest `longtask` and the worst 16 ms timer drift — and bounds both at 250 ms. That bound is a regression tripwire for an unyielding scan (seconds), not a frame-rate target: CI runners paint and collect garbage on their own schedule, and a tighter bound would fail on noise rather than on code. This is not a complete WCAG or assistive-technology certification. Exact React render counts, sustained heap growth, screen-reader output, production CPU use and frame rates remain unmeasured.
 
 ## Next steps if the scope grows
 

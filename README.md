@@ -115,7 +115,7 @@ npm run test:e2e
 npm audit --omit=dev
 ```
 
-Vitest covers domain rules, query correctness, datasource lifecycle, malformed storage and component interactions. Playwright runs Chromium against a dedicated production preview on port **4176**; it refuses to reuse an unrelated server. Tests cover retry, typing races, theme persistence, keyboard editing, narrow viewports and axe accessibility checks.
+Vitest covers domain rules, query correctness, datasource lifecycle, malformed storage and component interactions. Playwright runs Chromium against a dedicated production preview on port **4176**; it refuses to reuse an unrelated server. `npm run test:e2e` builds first so the preview never serves a stale `dist/`; CI builds once and runs `npm run test:e2e:ci`, which only starts the preview. Tests cover retry, typing races, theme persistence, keyboard editing, narrow viewports and axe accessibility checks, and every test fails on an uncaught exception, console error or AG Grid warning.
 
 The [CI workflow](.github/workflows/ci.yml) runs quality and E2E jobs for PRs and pushes to `main`. Separate `test:unit` and `test:integration` scripts are available for focused work.
 
