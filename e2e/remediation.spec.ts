@@ -228,6 +228,8 @@ for (const theme of ['light', 'dark'] as const) {
     'Analytics',
   ]) {
     test(`has no axe violations: ${theme} ${view}`, async ({ page }) => {
+      // Chromium page setup and axe's internal pages share this audit budget.
+      test.setTimeout(60_000);
       await page.goto('/');
       if (theme === 'dark') {
         await page.getByRole('button', { name: 'Use dark theme' }).click();
