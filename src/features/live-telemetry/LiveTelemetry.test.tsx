@@ -1,314 +1,186 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LiveDevice } from '../../shared/types';
+import { createFakeLiveGrid, type Transaction } from '../../test/fakeLiveGrid';
 
-const mocked = vi.hoisted(() => ({
-  gridProps: undefined as
-    | {
-        getRowId?: (params: { data: LiveDevice }) => string;
-        onGridReady?: (event: unknown) => void;
-        onAsyncTransactionsFlushed?: (event: unknown) => void;
-        rowData?: LiveDevice[];
-        asyncTransactionWaitMillis?: number;
-      }
-    | undefined,
+const harness = vi.hoisted(() => ({
+  grid: undefined as ReturnType<typeof createFakeLiveGrid> | undefined,
 }));
-
+type GridProps = Parameters<ReturnType<typeof createFakeLiveGrid>['Grid']>[0];
 vi.mock('ag-grid-react', () => ({
-  AgGridReact: (props: typeof mocked.gridProps) => {
-    mocked.gridProps = props;
-    return <div role="grid" aria-label="Live telemetry grid" />;
-  },
+  AgGridReact: (props: GridProps) => harness.grid!.Grid(props),
 }));
 
 import LiveTelemetry from './LiveTelemetry';
 
-describe('Live Telemetry', () => {
-  beforeEach(() => {
-    mocked.gridProps = undefined;
+const RESET_BATCH = 200;
+// Reset and resize submit update/add/remove together; a tick submits only updates.
+const isReset = (transaction: Transaction) => 'remove' in transaction;
+const advance = (ms: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
   });
+const select = (label: string, value: string) =>
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+const metric = (label: string) =>
+  screen.getByText(label, { exact: true }).parentElement!;
 
+function mount() {
+  const grid = createFakeLiveGrid();
+  harness.grid = grid;
+  const view = render(<LiveTelemetry />);
+  return { grid, ...view };
+}
+
+describe('Live Telemetry with AG Grid async transaction semantics', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   afterEach(() => {
     vi.useRealTimers();
+    harness.grid = undefined;
   });
 
-  it('restores only changed rows through async transactions when resetting the same dataset size', async () => {
-    vi.useFakeTimers();
-    const rows = new Map<string, LiveDevice>();
-    const api = {
-      applyTransactionAsync: vi.fn(
-        (
-          transaction: { update?: LiveDevice[] },
-          callback?: (result: { update: LiveDevice[] }) => void,
-        ) => {
-          for (const row of transaction.update ?? []) rows.set(row.id, row);
-          callback?.({ update: transaction.update ?? [] });
-        },
-      ),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn((id: string) => {
-        const data = rows.get(id);
-        return data ? { data } : undefined;
-      }),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
+  it('samples steady-state rates from a full window rather than the first partial one', async () => {
+    mount();
+    select('Changes / tick', '10');
+    // Ticks every 250 ms; each batch is confirmed 50 ms later. Only whole windows count.
+    await advance(2000);
 
-    render(<LiveTelemetry />);
-    const initialRows = mocked.gridProps?.rowData;
-    expect(initialRows).toHaveLength(1000);
-    for (const row of initialRows ?? []) rows.set(row.id, row);
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-
-    expect(mocked.gridProps?.getRowId?.({ data: initialRows![0]! })).toBe(
-      initialRows![0]!.id,
-    );
-
-    fireEvent.change(screen.getByLabelText('Changes / tick'), {
-      target: { value: '10' },
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
-    });
-    expect(api.applyTransactionAsync).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
-
-    expect(api.applyTransactionAsync).toHaveBeenCalledTimes(2);
-    expect(api.applyTransactionAsync).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        update: expect.arrayContaining([
-          expect.objectContaining({ id: expect.stringMatching(/^device-/) }),
-        ]),
-      }),
-      expect.any(Function),
-    );
-    expect(mocked.gridProps?.rowData).toBe(initialRows);
-    expect(screen.getByText('APPLIED UPDATES').parentElement).toHaveTextContent(
-      '0',
-    );
-  });
-
-  it('keeps incoming and applied work separate until a deferred transaction callback completes', async () => {
-    vi.useFakeTimers();
-    const transactions: Array<{
-      update?: LiveDevice[];
-      callback?: (result: { update: LiveDevice[] }) => void;
-    }> = [];
-    const api = {
-      applyTransactionAsync: vi.fn(
-        (
-          transaction: { update?: LiveDevice[] },
-          callback?: (result: { update: LiveDevice[] }) => void,
-        ) => transactions.push({ update: transaction.update, callback }),
-      ),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn((id: string) => ({
-        data: mocked.gridProps?.rowData?.find((row) => row.id === id),
-      })),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
-
-    render(<LiveTelemetry />);
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-    fireEvent.change(screen.getByLabelText('Changes / tick'), {
-      target: { value: '10' },
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-
-    expect(screen.getByText('EVENTS / SECOND').parentElement).toHaveTextContent(
-      '30',
-    );
+    expect(metric('EVENTS / SECOND')).toHaveTextContent('40');
     expect(
       screen.getByLabelText('Applied row updates / second'),
-    ).toHaveTextContent('0 rows/s');
-
-    act(() =>
-      transactions[0]?.callback?.({ update: transactions[0]?.update ?? [] }),
+    ).toHaveTextContent('40 rows/s');
+    expect(screen.getByLabelText('Async batches / second')).toHaveTextContent(
+      '4 batches/s',
     );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-
-    expect(
-      screen.getByLabelText('Applied row updates / second'),
-    ).toHaveTextContent('10 rows/s');
+    expect(metric('TRANSACTION WINDOW')).toHaveTextContent('50 ms');
   });
 
-  it('counts one async flush event as one batch even when it reports multiple transactions', async () => {
-    vi.useFakeTimers();
-    const api = {
-      applyTransactionAsync: vi.fn(),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
-
-    render(<LiveTelemetry />);
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-    expect(mocked.gridProps?.asyncTransactionWaitMillis).toBe(50);
-
+  it('counts one flush as one batch even when it commits several transactions', async () => {
+    const { grid } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
     act(() => {
-      mocked.gridProps?.onAsyncTransactionsFlushed?.({
-        results: [{}, {}, {}],
-      });
+      grid.api.applyTransactionAsync({ update: [] });
+      grid.api.applyTransactionAsync({ update: [] });
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
-
+    await advance(1000);
+    expect(grid.flushes()).toBe(1);
     expect(screen.getByLabelText('Async batches / second')).toHaveTextContent(
       '1 batches/s',
     );
-    expect(
-      screen.getByText('TRANSACTION WINDOW').parentElement,
-    ).toHaveTextContent('50 ms');
   });
 
-  it('does not let a pre-reset transaction callback credit the reset counters', async () => {
-    vi.useFakeTimers();
-    let callback: ((result: { update: LiveDevice[] }) => void) | undefined;
-    const rows = new Map<string, LiveDevice>();
-    const api = {
-      applyTransactionAsync: vi.fn(
-        (
-          transaction: { update?: LiveDevice[] },
-          next?: (result: { update: LiveDevice[] }) => void,
-        ) => {
-          for (const row of transaction.update ?? []) rows.set(row.id, row);
-          callback ??= next;
-        },
-      ),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn((id: string) => {
-        const data = rows.get(id);
-        return data ? { data } : undefined;
-      }),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
+  it('flushes the pending window when pausing so no update is stranded', async () => {
+    const { grid } = mount();
+    select('Changes / tick', '10');
+    await advance(250);
+    expect(grid.pending()).toBe(1);
+    const [tick] = grid.transactions;
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    expect(grid.pending()).toBe(0);
+    for (const row of tick!.update ?? [])
+      expect(grid.rows.get(row.id)?.lastSeen).toBe(row.lastSeen);
+    await advance(2000);
+    expect(grid.transactions).toHaveLength(1);
+    expect(metric('EVENTS / SECOND')).toHaveTextContent('0');
+  });
 
-    render(<LiveTelemetry />);
-    for (const row of mocked.gridProps?.rowData ?? []) rows.set(row.id, row);
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
-    });
+  it('flushes before diffing a reset, restores only the changed rows, and does not credit the pre-reset callback', async () => {
+    const { grid } = mount();
+    select('Changes / tick', '10');
+    await advance(250);
+    const changed = new Set(grid.transactions[0]!.update!.map((r) => r.id));
+    expect(grid.pending()).toBe(1);
+
     fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
-    act(() => callback?.({ update: Array.from(rows.values()).slice(0, 100) }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
-    });
+    // The queued tick was applied synchronously, so the reset saw its rows.
+    const reset = grid.transactions.filter(isReset);
+    expect(reset).toHaveLength(1);
+    expect(new Set(reset[0]!.update!.map((r) => r.id))).toEqual(changed);
+    expect(reset[0]!.add).toHaveLength(0);
+    expect(reset[0]!.remove).toHaveLength(0);
 
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    await advance(1100);
+    // The tick's callback ran after the counters were replaced; it must not count.
+    expect(metric('APPLIED UPDATES')).toHaveTextContent('0');
     expect(
       screen.getByLabelText('Applied row updates / second'),
     ).toHaveTextContent('0 rows/s');
+    for (const id of changed) expect(grid.rows.get(id)?.value).toBeDefined();
+  });
+
+  it('pauses ticks and disables controls until every bounded reset batch is confirmed', async () => {
+    const { grid } = mount();
+    select('Tick interval', '100');
+    select('Devices', '100');
+    const devices = screen.getByLabelText('Devices');
+    const reset = screen.getByRole('button', { name: 'Reset data' });
+    expect(devices).toBeDisabled();
+    expect(reset).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Resetting fleet…');
+
+    // 900 removals in batches of 200: five transactions, one per confirmed batch.
+    await advance(200);
+    expect(screen.getByRole('status')).toHaveTextContent('Resetting fleet…');
+    expect(grid.transactions.filter((t) => !isReset(t))).toHaveLength(0);
+    await advance(60);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(devices).toBeEnabled();
+    expect(reset).toBeEnabled();
+    const batches = grid.transactions.filter(isReset);
+    expect(batches).toHaveLength(5);
+    for (const batch of batches) {
+      expect(batch.update!.length).toBeLessThanOrEqual(RESET_BATCH);
+      expect(batch.add!.length).toBeLessThanOrEqual(RESET_BATCH);
+      expect(batch.remove!.length).toBeLessThanOrEqual(RESET_BATCH);
+    }
+    expect(grid.rows.size).toBe(100);
+    expect(metric('CONNECTED SENSORS')).toHaveTextContent('100');
+
+    await advance(100);
+    expect(grid.transactions.filter((t) => !isReset(t))).toHaveLength(1);
+  });
+
+  it('stops chaining reset batches once the grid is destroyed', async () => {
+    const { grid, unmount } = mount();
+    select('Devices', '100');
+    await advance(60);
+    const started = grid.transactions.filter(isReset).length;
+    expect(started).toBeGreaterThan(1);
+    expect(started).toBeLessThan(5);
+    unmount();
+    await advance(1000);
+    expect(grid.destroyedCalls()).toBe(0);
+    expect(grid.transactions.filter(isReset)).toHaveLength(started);
   });
 
   it('caps a burst at one update per stable row', async () => {
-    vi.useFakeTimers();
-    const rows = new Map<string, LiveDevice>();
-    const telemetryUpdates: LiveDevice[][] = [];
-    const api = {
-      applyTransactionAsync: vi.fn(
-        (
-          transaction: {
-            update?: LiveDevice[];
-            add?: LiveDevice[];
-            remove?: LiveDevice[];
-          },
-          callback?: (result: { update: LiveDevice[] }) => void,
-        ) => {
-          for (const row of transaction.remove ?? []) rows.delete(row.id);
-          for (const row of transaction.add ?? []) rows.set(row.id, row);
-          for (const row of transaction.update ?? []) rows.set(row.id, row);
-          if (transaction.update?.length)
-            telemetryUpdates.push(transaction.update);
-          callback?.({ update: transaction.update ?? [] });
-        },
-      ),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn((id: string) => {
-        const data = rows.get(id);
-        return data ? { data } : undefined;
-      }),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
-
-    render(<LiveTelemetry />);
-    for (const row of mocked.gridProps?.rowData ?? []) rows.set(row.id, row);
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-    fireEvent.change(screen.getByLabelText('Devices'), {
-      target: { value: '100' },
-    });
-    telemetryUpdates.length = 0;
-    fireEvent.change(screen.getByLabelText('Tick interval'), {
-      target: { value: '100' },
-    });
-    fireEvent.change(screen.getByLabelText('Changes / tick'), {
-      target: { value: '1000' },
-    });
+    const { grid } = mount();
+    select('Devices', '100');
+    await advance(300);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    grid.transactions.length = 0;
+    select('Tick interval', '100');
+    select('Changes / tick', '1000');
     fireEvent.click(screen.getByLabelText('Burst every 8 ticks'));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-
-    const burst = telemetryUpdates.at(-1);
-    expect(burst).toHaveLength(100);
-    expect(new Set(burst?.map((row) => row.id)).size).toBe(100);
+    await advance(800);
+    const burst = grid.transactions.filter((t) => !isReset(t)).at(-1);
+    expect(burst?.update).toHaveLength(100);
+    expect(new Set(burst?.update?.map((row) => row.id)).size).toBe(100);
   });
 
-  it('preserves stable row identity through row replacement and sorted ordering, then flushes when pausing', () => {
-    const api = {
-      applyTransactionAsync: vi.fn(),
-      flushAsyncTransactions: vi.fn(),
-      setGridAriaProperty: vi.fn(),
-      getColumn: vi.fn(() => ({ isVisible: () => true })),
-      getColumns: vi.fn(() => []),
-      getRowNode: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-      setColumnsVisible: vi.fn(),
-    };
-
-    render(<LiveTelemetry />);
-    const firstRow = mocked.gridProps?.rowData?.[0];
-    const replacement = { ...firstRow!, value: firstRow!.value + 1 };
-    const sortedRows = [...(mocked.gridProps?.rowData ?? [])].sort((a, b) =>
-      b.name.localeCompare(a.name),
+  it('keeps stable row identity through row replacement and sorted ordering', () => {
+    const { grid } = mount();
+    const { rowData, getRowId } = grid.props();
+    expect(rowData).toHaveLength(1000);
+    const first = rowData![0]!;
+    const replacement = { ...first, value: first.value + 1 };
+    expect(getRowId!({ data: replacement })).toBe(first.id);
+    const sorted = [...rowData!].sort((a, b) => b.name.localeCompare(a.name));
+    expect(new Set(sorted.map((data) => getRowId!({ data }))).size).toBe(
+      sorted.length,
     );
-    act(() => mocked.gridProps?.onGridReady?.({ api }));
-    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
-
-    expect(mocked.gridProps?.getRowId?.({ data: replacement })).toBe(
-      firstRow?.id,
-    );
-    expect(
-      new Set(
-        sortedRows.map((row) => mocked.gridProps?.getRowId?.({ data: row })),
-      ).size,
-    ).toBe(sortedRows.length);
-    expect(api.flushAsyncTransactions).toHaveBeenCalledTimes(1);
+    expect(grid.api.getRowNode(first.id)?.data).toBe(first);
   });
 });
