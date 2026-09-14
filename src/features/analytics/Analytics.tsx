@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, GridApi } from 'ag-grid-community';
-import { telemetryAt } from '../../shared/data/generator';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { ColumnControls } from '../../shared/grid/ColumnControls';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { formatNumber } from '../../shared/utils/format';
-import { summarize, type Summary } from './model';
+import { summarizeHistory, summarizeLocations, type Summary } from './model';
 export const analyticsColumns: ColDef<Summary>[] = [
   { field: 'location', pinned: 'left', width: 180 },
   { field: 'type', headerName: 'Sensor type', width: 150 },
@@ -34,21 +33,10 @@ const filterSchema = filterSchemaFor(analyticsColumns, defaultColDef);
 export default function Analytics() {
   const [api, setApi] = useState<GridApi<Summary>>();
   const [message, setMessage] = useState('');
-  const rows = useMemo(
-    () => summarize(Array.from({ length: 10000 }, (_, i) => telemetryAt(i))),
-    [],
-  );
+  // Index-native: reads only the fields each group needs from the 10,000 record indices.
+  const rows = useMemo(() => summarizeHistory(10000), []);
   const state = useGridState('analytics', filterSchema);
-  const locations = useMemo(
-    () =>
-      [...new Set(rows.map((row) => row.location))].map((location) => {
-        const groups = rows.filter((row) => row.location === location);
-        const count = groups.reduce((sum, row) => sum + row.count, 0);
-        const alerts = groups.reduce((sum, row) => sum + row.alerts, 0);
-        return { location, count, alerts, rate: (100 * alerts) / count };
-      }),
-    [rows],
-  );
+  const locations = useMemo(() => summarizeLocations(rows), [rows]);
   return (
     <section>
       <div className="feature-heading">
