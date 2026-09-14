@@ -7,13 +7,12 @@ describe('telemetry diagnostics', () => {
       received: 0,
       applied: 0,
       batches: 0,
-      tick: 0,
     });
   });
 
   it('reports received, applied, and async batch rates from counter deltas', () => {
-    const previous = { received: 100, applied: 80, batches: 8, tick: 10 };
-    const current = { received: 130, applied: 100, batches: 12, tick: 13 };
+    const previous = { received: 100, applied: 80, batches: 8 };
+    const current = { received: 130, applied: 100, batches: 12 };
 
     expect(sampleDiagnostics(current, previous, 500)).toEqual({
       received: 130,
@@ -25,7 +24,7 @@ describe('telemetry diagnostics', () => {
   });
 
   it('reports zero rates when no elapsed time is available', () => {
-    const counters = { received: 30, applied: 20, batches: 2, tick: 3 };
+    const counters = { received: 30, applied: 20, batches: 2 };
 
     expect(sampleDiagnostics(counters, createCounters(), 0)).toMatchObject({
       received: 30,
@@ -37,8 +36,8 @@ describe('telemetry diagnostics', () => {
   });
 
   it('treats a reset counter as a new baseline instead of reporting a negative rate', () => {
-    const beforeReset = { received: 100, applied: 90, batches: 9, tick: 10 };
-    const afterReset = { received: 10, applied: 5, batches: 1, tick: 1 };
+    const beforeReset = { received: 100, applied: 90, batches: 9 };
+    const afterReset = { received: 10, applied: 5, batches: 1 };
 
     expect(sampleDiagnostics(afterReset, beforeReset, 1000)).toMatchObject({
       rate: 10,
