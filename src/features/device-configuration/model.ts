@@ -23,6 +23,14 @@ export function validateDevice(device: Device): Record<string, string> {
   }
   return errors;
 }
+/** The error `validateDevice` reports for `field` if `value` replaced it on `device`. */
+export function fieldError(
+  device: Device,
+  field: keyof Device,
+  value: unknown,
+): string | undefined {
+  return validateDevice({ ...device, [field]: value } as Device)[field];
+}
 export function isDirty(current: Device, saved: Device | undefined): boolean {
   return (
     !saved ||

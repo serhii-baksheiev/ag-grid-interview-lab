@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useGridCellEditor, type CustomCellEditorProps } from 'ag-grid-react';
 import type { Device } from '../../shared/types';
-import { validateDevice } from './model';
+import { fieldError } from './model';
 type Props = Pick<
   CustomCellEditorProps<Device, string, unknown>,
   'value' | 'onValueChange' | 'parseValue' | 'data'
@@ -11,7 +11,7 @@ export function NameEditor({ value, onValueChange, parseValue, data }: Props) {
   const [text, setText] = useState(value ?? '');
   const errorId = useId();
   const input = useRef<HTMLInputElement>(null);
-  const error = validateDevice({ ...data, name: text.trim() }).name;
+  const error = fieldError(data, 'name', text.trim());
   useEffect(() => {
     input.current?.focus();
     input.current?.select();

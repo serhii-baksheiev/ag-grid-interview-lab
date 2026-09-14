@@ -338,6 +338,43 @@ for (const invalid of [' ', '   '])
     ).toBeVisible();
   });
 
+test('blocks committing an empty or out-of-range sampling interval with Enter and commits a valid one', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  await visibleGrid(page);
+  const cell = page.locator(
+    '[row-id="device-00001"] [col-id="samplingInterval"]',
+  );
+  await cell.click();
+  await page.keyboard.press('Enter');
+  const editor = page.getByRole('spinbutton');
+
+  await editor.fill('');
+  await page.keyboard.press('Enter');
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+
+  await editor.fill('3601');
+  await page.keyboard.press('Enter');
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+
+  await editor.fill('60');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveCount(0);
+  await expect(
+    page.getByText('1 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
 test('saves a selected new row into the baseline without losing other rows or drafts', async ({
   page,
 }) => {
