@@ -460,6 +460,44 @@ test('filters historical timestamps by the displayed UTC value', async ({
   );
 });
 
+test('restores a persisted Last seen date filter on the live grid', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'iot-lab:v1:live',
+      JSON.stringify({
+        version: '36.1.0',
+        filter: {
+          filterModel: {
+            lastSeen: {
+              filterType: 'date',
+              type: 'greaterThan',
+              dateFrom: '2030-01-01 00:00:00',
+            },
+          },
+        },
+      }),
+    );
+  });
+  await page.reload();
+  await visibleGrid(page, 'Live telemetry grid');
+  // Every seeded row is last seen in 2026, so a restored filter leaves no rows.
+  await expect(page.getByRole('gridcell')).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem('iot-lab:v1:live')!).filter
+            ?.filterModel?.lastSeen?.filterType,
+      ),
+    )
+    .toBe('date');
+  await page.getByRole('button', { name: 'Reset State', exact: true }).click();
+  await expect(page.getByRole('gridcell').first()).toBeVisible();
+});
+
 test('restores a persisted timestamp range filter and drops filters the columns cannot hold', async ({
   page,
 }) => {

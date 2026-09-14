@@ -53,6 +53,8 @@ export function configurationColumns(): ColDef<Device>[] {
       headerName: 'Last seen',
       editable: false,
       width: 205,
+      // Declared, not inferred: the persisted-filter schema must know this is a date column.
+      cellDataType: 'dateTimeString',
       valueFormatter: (params) => formatTimestamp(params.value),
     },
   ];

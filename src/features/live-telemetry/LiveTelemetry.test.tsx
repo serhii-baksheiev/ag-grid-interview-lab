@@ -65,6 +65,8 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
     });
     await advance(1000);
     expect(grid.flushes()).toBe(1);
+    // The window the fake honours is the one the screen actually passes to the grid.
+    expect(grid.props().asyncTransactionWaitMillis).toBe(50);
     expect(screen.getByLabelText('Async batches / second')).toHaveTextContent(
       '1 batches/s',
     );
@@ -88,11 +90,14 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
   it('flushes before diffing a reset, restores only the changed rows, and does not credit the pre-reset callback', async () => {
     const { grid } = mount();
     select('Changes / tick', '10');
+    const initialRows = grid.props().rowData;
     await advance(250);
     const changed = new Set(grid.transactions[0]!.update!.map((r) => r.id));
     expect(grid.pending()).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
+    // The rowData array stays the same reference: reset goes through transactions.
+    expect(grid.props().rowData).toBe(initialRows);
     // The queued tick was applied synchronously, so the reset saw its rows.
     const reset = grid.transactions.filter(isReset);
     expect(reset).toHaveLength(1);
