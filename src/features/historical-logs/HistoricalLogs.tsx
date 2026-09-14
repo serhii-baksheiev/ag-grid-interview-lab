@@ -2,15 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
 import type { Telemetry } from '../../shared/types';
-import {
-  defaultColDef,
-  statusRenderer,
-  gridTheme,
-} from '../../shared/grid/base';
+import { defaultColDef, gridTheme } from '../../shared/grid/base';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
-import { formatNumber, formatTimestamp } from '../../shared/utils/format';
+import { formatNumber } from '../../shared/utils/format';
+import { historyColumns, historyFilterParams } from './columns';
 import { createHistoryDatasource, type DatasourceStatus } from './datasource';
 
 const initialStatus: DatasourceStatus = {
@@ -18,47 +15,7 @@ const initialStatus: DatasourceStatus = {
   error: false,
   requests: [],
 };
-// A column-level filterParams replaces the default object, so share the base.
-const filterParams = {
-  debounceMs: 350,
-  maxNumConditions: 2,
-  inRangeInclusive: true,
-};
-const columns: ColDef<Telemetry>[] = [
-  {
-    field: 'timestamp',
-    headerName: 'Timestamp · UTC',
-    width: 205,
-    pinned: 'left',
-    valueFormatter: (p) => formatTimestamp(p.value as string | undefined),
-    // Filter what is displayed: a date-time picker, read as UTC by the mock query.
-    // The floating filter syncs its date into the main filter by the column's
-    // data type, not by filterParams, so both must say "with time".
-    cellDataType: 'dateTimeString',
-    filter: 'agDateColumnFilter',
-    filterParams: { ...filterParams, includeTime: true },
-  },
-  { field: 'deviceId', headerName: 'Device', width: 160 },
-  { field: 'location', width: 165 },
-  { field: 'type', headerName: 'Sensor type', width: 150 },
-  {
-    field: 'value',
-    width: 115,
-    filter: 'agNumberColumnFilter',
-    valueFormatter: (p) => formatNumber(p.value as number | undefined),
-    cellClass: 'numeric-cell',
-  },
-  { field: 'unit', width: 110, filter: false, sortable: false },
-  { field: 'status', width: 130, cellRenderer: statusRenderer },
-  {
-    field: 'quality',
-    headerName: 'Quality %',
-    width: 120,
-    filter: 'agNumberColumnFilter',
-  },
-  { field: 'message', headerName: 'Diagnostic', width: 225 },
-];
-const filterSchema = filterSchemaFor(columns, defaultColDef);
+const filterSchema = filterSchemaFor(historyColumns, defaultColDef);
 export default function HistoricalLogs() {
   const [total, setTotal] = useState(100000);
   const [latency, setLatency] = useState(250);
@@ -82,7 +39,7 @@ export default function HistoricalLogs() {
     () => ({
       ...defaultColDef,
       floatingFilter: true,
-      filterParams,
+      filterParams: historyFilterParams,
     }),
     [],
   );
@@ -238,14 +195,24 @@ export default function HistoricalLogs() {
       </div>
       {status.error && (
         <div className="notice error" role="alert">
-          Historical request failed. Disable error simulation and retry.{' '}
-          <button
-            onClick={() => {
-              api.current?.purgeInfiniteCache();
-            }}
-          >
-            Retry
-          </button>
+          {status.failure === 'unsupported' ? (
+            // Retrying cannot help: the query itself is outside the supported grammar.
+            <>
+              The current column filters cannot be applied to the historical
+              data. Clear them or use Reset State.
+            </>
+          ) : (
+            <>
+              Historical request failed. Disable error simulation and retry.{' '}
+              <button
+                onClick={() => {
+                  api.current?.purgeInfiniteCache();
+                }}
+              >
+                Retry
+              </button>
+            </>
+          )}
         </div>
       )}
       {status.total === 0 && !status.pending && (
@@ -257,7 +224,7 @@ export default function HistoricalLogs() {
       <div className="grid-frame" aria-label="Historical measurements">
         <AgGridReact<Telemetry>
           theme={gridTheme}
-          columnDefs={columns}
+          columnDefs={historyColumns}
           defaultColDef={defaults}
           // No getRowId: the Infinite Row Model would use it for RowNode ids,
           // but nothing here selects or looks rows up by id, so rows keep the

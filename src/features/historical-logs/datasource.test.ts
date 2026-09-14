@@ -178,7 +178,55 @@ describe('asynchronous historical datasource', () => {
     expect(onStatus.mock.lastCall?.[0]).toMatchObject({
       pending: 0,
       error: true,
+      failure: 'unsupported',
     });
+    source.destroy?.();
+  });
+  it('reports a simulated request failure distinctly from an unsupported model', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => true,
+      onStatus,
+    });
+    const failing = request();
+    source.getRows(failing);
+    await vi.runAllTimersAsync();
+    expect(failing.successCallback).not.toHaveBeenCalled();
+    expect(failing.failCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 0,
+      error: true,
+      failure: 'request',
+    });
+    source.destroy?.();
+  });
+  it('clears error and failure once a later request succeeds', async () => {
+    vi.useFakeTimers();
+    let fail = true;
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => fail,
+      onStatus,
+    });
+    const failing = request();
+    source.getRows(failing);
+    await vi.runAllTimersAsync();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      error: true,
+      failure: 'request',
+    });
+    fail = false;
+    const retry = request();
+    source.getRows(retry);
+    await vi.runAllTimersAsync();
+    expect(retry.successCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({ error: false });
+    expect(onStatus.mock.lastCall?.[0].failure).toBeUndefined();
     source.destroy?.();
   });
   it('settles calls queued after destruction exactly once', () => {

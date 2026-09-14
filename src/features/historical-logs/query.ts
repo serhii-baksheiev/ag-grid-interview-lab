@@ -188,7 +188,11 @@ function compile<T>(
   const { filterType, type } = model;
   if (filterType !== 'text' && filterType !== 'number' && filterType !== 'date')
     throw new UnsupportedQueryError(`Unsupported filter type "${filterType}"`);
-  if (Array.isArray(model.conditions)) {
+  if ('conditions' in model || 'operator' in model) {
+    if (!Array.isArray(model.conditions))
+      throw new UnsupportedQueryError(
+        'A combined filter needs a conditions array',
+      );
     if (parentType !== undefined)
       throw new UnsupportedQueryError('Combined filters cannot be nested');
     if (model.conditions.length < 1 || model.conditions.length > 2)
@@ -485,10 +489,15 @@ export async function prepareHistory(
       [lo, hi] = range;
     } else predicates.push(rowPredicate(colId, model));
   }
+  const sorted = new Set<string>();
   const sorts = query.sortModel.map(({ colId, sort }) => {
     if (sort !== 'asc' && sort !== 'desc')
       throw new UnsupportedQueryError(`Unsupported sort direction "${sort}"`);
     column(colId);
+    // A repeated key never decides the order and would add a full key array.
+    if (sorted.has(colId))
+      throw new UnsupportedQueryError(`Sort model repeats column "${colId}"`);
+    sorted.add(colId);
     return { colId, descending: sort === 'desc' };
   });
   // Timestamps are distinct and follow source order: keys after one never decide,

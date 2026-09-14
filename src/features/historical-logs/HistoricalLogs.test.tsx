@@ -78,6 +78,41 @@ describe('Historical Logs screen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('tells the user to clear filters when the current column filters cannot be applied to historical data', () => {
+    renderReadyHistory();
+    act(() =>
+      mocked.datasourceOptions?.onStatus({
+        pending: 0,
+        error: true,
+        failure: 'unsupported',
+        requests: [],
+      }),
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toMatch(
+      /current column filters.*cannot be applied to the historical data/i,
+    );
+    expect(alert.textContent).toMatch(/clear them|Reset State/i);
+    expect(alert.textContent).not.toContain('Disable error simulation');
+  });
+
+  it('keeps the request-failure message and Retry button for a simulated request failure', () => {
+    renderReadyHistory();
+    act(() =>
+      mocked.datasourceOptions?.onStatus({
+        pending: 0,
+        error: true,
+        failure: 'request',
+        requests: [],
+      }),
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      'Historical request failed. Disable error simulation and retry.',
+    );
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('gives the infinite grid no getRowId: nothing on this screen consumes row ids', () => {
     renderReadyHistory();
     expect(mocked.gridProps?.getRowId).toBeUndefined();

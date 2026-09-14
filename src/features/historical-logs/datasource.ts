@@ -1,5 +1,10 @@
 import type { IDatasource, IGetRowsParams } from 'ag-grid-community';
-import { historyPage, prepareHistory, type HistoryIndex } from './query';
+import {
+  historyPage,
+  prepareHistory,
+  UnsupportedQueryError,
+  type HistoryIndex,
+} from './query';
 import { telemetryAt } from '../../shared/data/generator';
 
 export interface RequestEntry {
@@ -12,6 +17,8 @@ export interface RequestEntry {
 export interface DatasourceStatus {
   pending: number;
   error: boolean;
+  /** Why the last request failed: a failed request, or a query outside the grammar. */
+  failure?: 'request' | 'unsupported';
   total?: number;
   requests: RequestEntry[];
 }
@@ -30,12 +37,14 @@ export function createHistoryDatasource(options: {
   let entries: RequestEntry[] = [];
   let failed = false,
     matchedTotal: number | undefined;
+  let failure: DatasourceStatus['failure'];
   const active = new Set<() => void>();
   const emit = () => {
     if (!destroyed)
       options.onStatus({
         pending: active.size,
         error: failed,
+        ...(failed ? { failure } : {}),
         total: matchedTotal,
         requests: entries.map((entry) => ({ ...entry })),
       });
@@ -59,6 +68,7 @@ export function createHistoryDatasource(options: {
         controller = new AbortController();
         index = undefined;
         failed = false;
+        failure = undefined;
         matchedTotal = undefined;
       }
       const current = generation,
@@ -76,6 +86,7 @@ export function createHistoryDatasource(options: {
       const finish = (
         status: RequestEntry['status'],
         page?: ReturnType<typeof historyPage>,
+        reason: DatasourceStatus['failure'] = 'request',
       ) => {
         if (settled) return;
         settled = true;
@@ -87,7 +98,11 @@ export function createHistoryDatasource(options: {
         if (status === 'success' && page) {
           matchedTotal = page.total;
           failed = false;
-        } else if (status === 'error') failed = true;
+          failure = undefined;
+        } else if (status === 'error') {
+          failed = true;
+          failure = reason;
+        }
         try {
           if (status === 'success' && page)
             params.successCallback(page.rows, page.total);
@@ -134,14 +149,18 @@ export function createHistoryDatasource(options: {
             'success',
             historyPage(prepared, params.startRow, params.endRow),
           );
-        } catch {
+        } catch (error) {
           if (settled) return;
           if (destroyed || current !== generation) {
             cancel();
             return;
           }
           index = undefined;
-          finish('error');
+          finish(
+            'error',
+            undefined,
+            error instanceof UnsupportedQueryError ? 'unsupported' : 'request',
+          );
         }
       };
       void execute();
