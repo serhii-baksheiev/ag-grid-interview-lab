@@ -35,7 +35,9 @@ function filter(
 ): Record<string, unknown> | undefined {
   if (!object(v) || !['text', 'number', 'date'].includes(String(v.filterType)))
     return;
-  if (expected && v.filterType !== expected) return;
+  // A boolean column's filter is AG Grid's text filter with true/false options.
+  const booleanColumn = expected === 'boolean';
+  if (expected && v.filterType !== (booleanColumn ? 'text' : expected)) return;
   const filterType = v.filterType;
   if ('operator' in v || 'conditions' in v) {
     if (
@@ -46,17 +48,20 @@ function filter(
       v.conditions.length > 2
     )
       return;
-    const conditions = v.conditions.map((c) => filter(c, true));
+    const conditions = v.conditions.map((c) => filter(c, true, expected));
     if (conditions.some((c) => !c || c.filterType !== filterType)) return;
     return { filterType, operator: v.operator, conditions };
   }
   const type = v.type;
-  const noValue = [
-    'blank',
-    'notBlank',
-    ...(filterType === 'text' ? ['true', 'false'] : []),
-  ];
+  // Without a schema any text filter may belong to a boolean column; with one,
+  // only a boolean column's filter may be true/false.
+  const booleanTypes =
+    filterType === 'text' && (expected === undefined || booleanColumn)
+      ? ['true', 'false']
+      : [];
+  const noValue = ['blank', 'notBlank', ...booleanTypes];
   if (noValue.includes(String(type))) return { filterType, type };
+  if (booleanColumn) return;
   if (filterType === 'text') {
     if (
       ![
@@ -232,11 +237,22 @@ export function readState(
     return undefined;
   }
 }
-export function writeState(key: string, state: GridState): boolean {
+/** The raw stored text for a key; null when absent or storage is unavailable. */
+export function readStoredText(key: string): string | null {
   try {
-    localStorage.setItem(key, serializeState(state));
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+export function writeStoredText(key: string, text: string): boolean {
+  try {
+    localStorage.setItem(key, text);
     return true;
   } catch {
     return false;
   }
+}
+export function writeState(key: string, state: GridState): boolean {
+  return writeStoredText(key, serializeState(state));
 }

@@ -24,6 +24,12 @@ const select = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const metric = (label: string) =>
   screen.getByText(label, { exact: true }).parentElement!;
+// `quickFilterText`/`cacheQuickFilter` aren't declared on the fake's narrow
+// `GridProps`, but the fake stores whatever it actually received.
+const quickFilterTextOf = (grid: ReturnType<typeof createFakeLiveGrid>) =>
+  (grid.props() as unknown as { quickFilterText?: string }).quickFilterText;
+const cacheQuickFilterOf = (grid: ReturnType<typeof createFakeLiveGrid>) =>
+  (grid.props() as unknown as { cacheQuickFilter?: boolean }).cacheQuickFilter;
 
 function mount() {
   const grid = createFakeLiveGrid();
@@ -88,7 +94,7 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
     expect(metric('EVENTS / SECOND')).toHaveTextContent('0');
   });
 
-  it('flushes before diffing a reset, restores only the changed rows, and does not credit the pre-reset callback', async () => {
+  it('flushes a pending tick ahead of the reset, restores only the changed rows, and does not credit the pre-reset callback', async () => {
     const { grid } = mount();
     select('Changes / tick', '10');
     const initialRows = grid.props().rowData;
@@ -99,7 +105,8 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
     // The rowData array stays the same reference: reset goes through transactions.
     expect(grid.props().rowData).toBe(initialRows);
-    // The queued tick was applied synchronously, so the reset saw its rows.
+    // The queued tick's transaction was flushed ahead of the reset batches, so
+    // the reset diffed against its rows and restored only what actually changed.
     const reset = grid.transactions.filter(isReset);
     expect(reset).toHaveLength(1);
     expect(new Set(reset[0]!.update!.map((r) => r.id))).toEqual(changed);
@@ -231,5 +238,54 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
     for (const device of seeded) {
       expect(grid.rows.get(device.id)).toEqual(device);
     }
+  });
+
+  it('enables cacheQuickFilter on the grid', () => {
+    const { grid } = mount();
+    expect(cacheQuickFilterOf(grid)).toBe(true);
+  });
+
+  it('shows typed search text immediately but delays the grid quickFilterText by 300ms of no typing', async () => {
+    const { grid } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    const search = screen.getByLabelText('Search live');
+    fireEvent.change(search, { target: { value: 'dev' } });
+    expect(search).toHaveValue('dev');
+    expect(quickFilterTextOf(grid)).toBe('');
+    await advance(299);
+    expect(quickFilterTextOf(grid)).toBe('');
+    await advance(1);
+    expect(quickFilterTextOf(grid)).toBe('dev');
+  });
+
+  it('updates quickFilterText once, to the final value, 300 ms after the last of several rapid keystrokes', async () => {
+    const { grid } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    const search = screen.getByLabelText('Search live');
+    fireEvent.change(search, { target: { value: 't' } });
+    await advance(100);
+    fireEvent.change(search, { target: { value: 'te' } });
+    await advance(100);
+    fireEvent.change(search, { target: { value: 'tem' } });
+    expect(quickFilterTextOf(grid)).toBe('');
+    // Each keystroke reset the timer, so only 299ms have elapsed since the last one.
+    await advance(299);
+    expect(quickFilterTextOf(grid)).toBe('');
+    await advance(1);
+    expect(quickFilterTextOf(grid)).toBe('tem');
+  });
+
+  it('Reset State clears the input and quickFilterText immediately, and a stale pending debounce does not resurrect the old text', async () => {
+    const { grid } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    const search = screen.getByLabelText('Search live');
+    fireEvent.change(search, { target: { value: 'device-00001' } });
+    await advance(200); // debounce still pending
+    fireEvent.click(screen.getByRole('button', { name: 'Reset State' }));
+    expect(search).toHaveValue('');
+    expect(quickFilterTextOf(grid)).toBe('');
+    await advance(300); // let the pre-reset debounce timer, if any, fire
+    expect(quickFilterTextOf(grid)).toBe('');
+    expect(search).toHaveValue('');
   });
 });

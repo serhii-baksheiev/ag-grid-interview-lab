@@ -740,3 +740,25 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
     MAIN_THREAD_BUDGET_MS,
   );
 });
+
+test('filters the live grid by search once typing stops, then clears it', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Pause stream' }).click();
+  const search = page.getByLabel('Search live', { exact: true });
+  const locations = page.locator('[role="gridcell"][col-id="location"]');
+  await expect(locations.first()).toBeVisible();
+  const distinctLocations = async () => [
+    ...new Set(await locations.allTextContents()),
+  ];
+  // The quick filter matches each space-separated word against every visible
+  // value, including computed numbers; words keep the expected set exact.
+  await search.fill('Cold storage');
+  await expect.poll(distinctLocations).toEqual(['Cold storage']);
+
+  await search.fill('');
+  await expect
+    .poll(async () => (await distinctLocations()).length)
+    .toBeGreaterThan(1);
+});

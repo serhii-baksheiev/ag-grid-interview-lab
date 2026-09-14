@@ -106,6 +106,11 @@ export function createFakeLiveGrid() {
     getColumn: () => ({ isVisible: () => true }),
     getColumns: () => [],
     setColumnsVisible() {},
+    // Minimal stand-ins for useGridState's Reset State path: this fake owns
+    // rows/transactions, not column or filter state.
+    resetColumnState() {},
+    setFilterModel() {},
+    getState: () => ({}),
     addEventListener(type: string, listener: () => void) {
       if (!listeners.has(type)) listeners.set(type, new Set());
       listeners.get(type)!.add(listener);

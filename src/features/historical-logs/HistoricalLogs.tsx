@@ -4,7 +4,6 @@ import type { ColDef, GridApi, GridReadyEvent } from 'ag-grid-community';
 import type { Telemetry } from '../../shared/types';
 import {
   defaultColDef,
-  getRowId,
   statusRenderer,
   gridTheme,
 } from '../../shared/grid/base';
@@ -260,7 +259,9 @@ export default function HistoricalLogs() {
           theme={gridTheme}
           columnDefs={columns}
           defaultColDef={defaults}
-          getRowId={getRowId}
+          // No getRowId: the Infinite Row Model would use it for RowNode ids,
+          // but nothing here selects or looks rows up by id, so rows keep the
+          // grid's block-position ids.
           rowModelType="infinite"
           cacheBlockSize={200}
           maxBlocksInCache={8}
@@ -286,7 +287,6 @@ export default function HistoricalLogs() {
           }}
           onGridPreDestroyed={state.onGridPreDestroyed}
           animateRows={false}
-          rowBuffer={10}
         />
       </div>
       <div className="toolbar">

@@ -1510,7 +1510,7 @@ describe('grid-state restoration never hands the engine a filter it rejects', ()
     );
   });
 
-  it('executes every model restoration keeps, apart from boolean-column text types', async () => {
+  it('executes every model grid-state restoration keeps for a Historical Logs column', async () => {
     let restorable = 0;
     const rejected: string[] = [];
     for (const [column, model] of candidates) {
@@ -1532,12 +1532,13 @@ describe('grid-state restoration never hands the engine a filter it rejects', ()
       if (!accepted) rejected.push(`${column}: ${JSON.stringify(restored)}`);
     }
     // Not vacuous: the well-formed models survive restoration.
-    expect(restorable).toBeGreaterThan(100);
-    // Grid-state storage accepts 'true'/'false' on any text column for the boolean
-    // Configuration filter. Historical Logs has no boolean column, so the engine
-    // rejects those explicitly instead of guessing; nothing else may differ.
-    expect(
-      rejected.filter((entry) => !/"type":"(true|false)"/.test(entry)),
-    ).toEqual([]);
+    // Pinned: a change to either grammar must revisit this count rather than
+    // let the correspondence pass over fewer models.
+    expect(restorable).toBe(99);
+    // Historical Logs has no 'boolean'-schema column, so grid-state restoration
+    // itself now drops a 'true'/'false' text filter on every one of its columns
+    // (see filterSchema/storage: 'text' columns reject that type). Nothing
+    // restoration keeps should be a model the engine then rejects.
+    expect(rejected).toEqual([]);
   });
 });

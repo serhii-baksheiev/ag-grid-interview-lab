@@ -360,4 +360,78 @@ describe('persisted filter models against a column filter schema', () => {
       },
     });
   });
+
+  describe("a 'boolean'-schema column", () => {
+    const boolSchema = { ...schema, enabled: 'boolean' } as const;
+
+    it('keeps a true/false filter on the boolean column, alongside a valid sibling', () => {
+      expect(
+        deserializeState(
+          stored({
+            enabled: { filterType: 'text', type: 'true' },
+            deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+          }),
+          boolSchema,
+        ),
+      ).toEqual({
+        version: '36.1.0',
+        filter: {
+          filterModel: {
+            enabled: { filterType: 'text', type: 'true' },
+            deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+          },
+        },
+      });
+    });
+
+    it.each(['blank', 'notBlank'])('keeps a %s filter', (type) => {
+      expect(
+        deserializeState(
+          stored({ enabled: { filterType: 'text', type } }),
+          boolSchema,
+        ),
+      ).toEqual({
+        version: '36.1.0',
+        filter: { filterModel: { enabled: { filterType: 'text', type } } },
+      });
+    });
+
+    it('drops a non-boolean text filter type (contains) on the boolean column', () => {
+      expect(
+        deserializeState(
+          stored({
+            enabled: { filterType: 'text', type: 'contains', filter: 'x' },
+            deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+          }),
+          boolSchema,
+        ),
+      ).toEqual({
+        version: '36.1.0',
+        filter: {
+          filterModel: {
+            deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+          },
+        },
+      });
+    });
+  });
+
+  it("drops a true/false filter on a 'text'-schema column, keeping a valid sibling", () => {
+    expect(
+      deserializeState(
+        stored({
+          deviceId: { filterType: 'text', type: 'true' },
+          value: { filterType: 'number', type: 'equals', filter: 4 },
+        }),
+        schema,
+      ),
+    ).toEqual({
+      version: '36.1.0',
+      filter: {
+        filterModel: {
+          value: { filterType: 'number', type: 'equals', filter: 4 },
+        },
+      },
+    });
+  });
 });
