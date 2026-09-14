@@ -1,8 +1,8 @@
 {
-  "name": "ag-grid-iot-interview-lab",
+  "name": "ag-grid-iot-lab",
   "private": true,
   "version": "1.0.0",
-  "description": "A React and TypeScript AG Grid lab for streaming IoT telemetry, large datasets, spreadsheet-style editing and interview practice.",
+  "description": "A React and TypeScript reference implementation for high-volume IoT telemetry, large historical datasets, and spreadsheet-style editing with AG Grid.",
   "license": "MIT",
   "author": "Serhii Baksheiev",
   "repository": {

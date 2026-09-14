@@ -616,29 +616,12 @@ code {
   font-size: 9px;
   color: var(--muted);
 }
-.guide-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-.guide-cards article {
-  padding: 25px;
-}
-.guide-cards p,
-.guide-reading p {
-  font-size: 13px;
-  color: var(--muted);
-}
 .step-number {
   font-size: 32px;
   font-weight: 300;
   color: #5269af;
   display: block;
   margin-bottom: 30px;
-}
-.guide-reading {
-  padding: 25px;
-  margin-top: 20px;
 }
 .skip-link {
   position: fixed;

@@ -229,7 +229,6 @@ test('keeps each screen inside a narrow viewport', async ({ page }) => {
     'Historical Logs',
     'Device Configuration',
     'Analytics',
-    'Interview Guide',
   ]) {
     await page.getByRole('button', { name: screen, exact: true }).click();
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -313,7 +312,7 @@ test('edits and saves device configuration', async ({ page }) => {
     .getByRole('textbox')
     .filter({ visible: true })
     .last()
-    .fill('Interview sensor');
+    .fill('Reference sensor');
   await page.keyboard.press('Enter');
   await expect(
     page.getByText('1 unsaved changes', { exact: true }),
@@ -323,7 +322,7 @@ test('edits and saves device configuration', async ({ page }) => {
     page.getByText('0 unsaved changes', { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole('gridcell', { name: 'Interview sensor', exact: true }),
+    page.getByRole('gridcell', { name: 'Reference sensor', exact: true }),
   ).toBeVisible();
 });
 

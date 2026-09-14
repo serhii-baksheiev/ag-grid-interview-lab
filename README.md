@@ -1,6 +1,6 @@
 <div align="center">
-  <h1>AG Grid IoT Interview Lab</h1>
-  <p>A hands-on React and TypeScript playground for streaming telemetry,<br />large historical datasets and spreadsheet-style editing.</p>
+  <h1>AG Grid IoT Lab</h1>
+  <p>A React and TypeScript reference implementation for high-volume IoT telemetry,<br />large historical datasets and spreadsheet-style editing with AG Grid.</p>
 
 <a href="https://github.com/serhii-baksheiev/ag-grid-interview-lab/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/serhii-baksheiev/ag-grid-interview-lab/actions/workflows/ci.yml/badge.svg" /></a>
 <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?logo=react" />
@@ -11,13 +11,13 @@
 
 ![Live telemetry console in dark mode](docs/screenshots/overview-dark.png)
 
-**Synthetic data. Four focused scenarios. Native grid APIs you can explain.**
+**Synthetic data. Four focused scenarios. Explicit engineering decisions.**
 
-[Scenarios](#four-scenarios) · [Architecture](#architecture) · [Run locally](#getting-started) · [Verification](#verification) · [Practice](#interview-practice)
+[Scenarios](#four-scenarios) · [Architecture](#architecture) · [Run locally](#getting-started) · [Verification](#verification) · [Documentation](#documentation)
 
 ## Why this project
 
-Practice the decisions behind a data-heavy interface: how to update rows without losing identity, when to fetch blocks instead of loading everything, and how to keep edits safe when a save fails. Each screen exposes those decisions through a small, inspectable feature module.
+This project demonstrates how to update rows without losing identity, when to fetch blocks instead of loading everything, and how to keep edits safe when a save fails. Each screen implements those decisions in a small, inspectable feature module.
 
 The demo runs without an account or backend. Seed **42** makes device data reproducible; historical timestamps use a fixed UTC epoch. Live timestamps follow the demonstration clock.
 
@@ -119,19 +119,10 @@ Vitest covers domain rules, query correctness, datasource lifecycle, malformed s
 
 The [CI workflow](.github/workflows/ci.yml) runs quality and E2E jobs for PRs and pushes to `main`. Separate `test:unit` and `test:integration` scripts are available for focused work.
 
-## Interview practice
-
-1. **Follow a live update:** show stable `getRowId`, change a measurement, and explain why a transaction preserves grid context.
-2. **Trace a historical request:** filter 500k records, inspect blocks, trigger a failure and retry. Explain cancellation and filtering before pagination.
-3. **Make an edit safe:** change a threshold, simulate a save failure, navigate away and back, then revert. Explain draft versus baseline.
-
-The in-app Interview Guide links concepts to code. [Ten live-coding exercises](docs/LIVE_CODING_TASKS.md) include setup, acceptance checks and trade-offs.
-
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) · [Performance](docs/PERFORMANCE.md) · [Feature matrix](docs/FEATURE_MATRIX.md)
-- [Interview notes — Russian](docs/INTERVIEW_NOTES_RU.md) · [Spoken explanations — English](docs/INTERVIEW_PHRASES_EN.md)
-- [Live-coding exercises](docs/LIVE_CODING_TASKS.md) · [Audit remediation](docs/audits/REMEDIATION.md)
+- [Audit remediation](docs/audits/REMEDIATION.md)
 
 ## Limitations
 
@@ -139,7 +130,7 @@ Historical data and network failures are synthetic. Query work still runs in the
 
 Undo/redo covers cell edits, not the application's full history. Sorting, filtering, row replacement and column layout/visibility changes can clear the native undo stack. Save locks editing and undo shortcuts until completion.
 
-This is an interview lab, not a production monitoring service or a WCAG certification. Local performance results depend on hardware, browser, load and query shape.
+This is a local engineering reference. Production monitoring would require durable storage, access control and reliable stream delivery; accessibility checks do not constitute WCAG certification. Local performance results depend on hardware, browser, load and query shape.
 
 ## License
 

@@ -6,6 +6,8 @@ The shell owns navigation and theme. Each feature owns its column definitions, i
 
 The four datasets are intentionally independent. Configuration edits demonstrate an editing workflow; they are not wired into the live stream. Historical and analytics values come from the same deterministic generator but represent separate query/sample surfaces.
 
+Local state keeps ownership next to each feature because the scenarios share no mutable business state. A global store would become useful for cross-screen synchronization, shared server caches or durable drafts. A universal grid wrapper would obscure the different row models and edit lifecycles; shared helpers cover repeated concerns without owning feature behavior.
+
 ## Domain and reproducibility
 
 Devices have identity, descriptive metadata, status, enabled flag, unit, sampling interval, two thresholds and last-seen time. Telemetry adds its own identity, device reference, timestamp, value, quality and optional diagnostics. Six sensor types span four locations.
@@ -27,6 +29,8 @@ The complete current fleet is available in memory, so the Client-Side Row Model 
 
 Metrics use refs for stream counters and update React separately from every individual event. Timer cleanup stops input and flushes pending grid work when appropriate. Column definitions and shared grid props keep stable references. Rendering uses ordinary formatting where possible and a small status renderer where visual semantics justify it.
 
+Stable IDs keep updates attached to devices after sorting; display indices cannot do that. Async batching trades a short display delay for fewer repeated model passes. Occasional manual updates can use synchronous transactions. Coalescing a faster stream to the latest event per device would reduce work but discard intermediate states, so it requires an explicit product decision. Received and applied counters measure different pipeline stages.
+
 ## Historical queries
 
 ```mermaid
@@ -47,7 +51,9 @@ The datasource caches a promise for the current query index so valid concurrent 
 
 AG Grid caches eight blocks of 200 rows. Text and number filters are processed by the mock before pagination, including supported AND/OR conditions. ColumnControls toggles column visibility; filterParams.debounceMs and the separate Device input timer debounce filters. Quick Filter is used only on the client-side live grid. Historical position jumping targets the current result ordering, not a raw timestamp lookup.
 
-Cooperative yielding does not make this a server: index construction still consumes main-thread CPU and O(N) scalar/index memory. It is a teaching compromise that avoids a backend and makes the request contract visible. No full 500,000-record object array is recreated on React renders.
+Cooperative yielding does not make this a server: index construction still consumes main-thread CPU and O(N) scalar/index memory. This local implementation keeps the request contract inspectable without backend setup. No full 500,000-record object array is recreated on React renders.
+
+Filtering and sorting must precede slicing: ordering a cached block alone cannot produce globally correct pages. A device ID is not a historical row ID because a device has many measurements. Likewise, aggregating only loaded grid rows cannot describe the full history. Small histories could use Client-Side; larger production histories should delegate queries to a backend.
 
 ## Configuration editing and save
 
@@ -68,6 +74,8 @@ A custom React name editor (`NameEditor.tsx`) demonstrates `CustomCellEditorProp
 
 The invariant is `warningThreshold < criticalThreshold`; sampling is an integer from 1 to 3,600 seconds. A stable grid row array supports native edit undo/redo while React refreshes dirty metadata. The saved baseline is copied independently. Save is pessimistic: editing/actions are restricted while the simulated request is in flight, and the baseline advances only on success. Failed saves retain drafts.
 
+Sharing draft and baseline objects would let a grid edit mutate both and incorrectly clear dirty state. Pessimistic saves avoid optimistic rollback and concurrent-snapshot reconciliation while still showing the draft immediately. Optimistic persistence would suit a latency-sensitive workflow with defined version/conflict handling. Cell-level validation means critical may need raising before warning; full-row editing would allow validating both new thresholds together. An external store could instead own edits through `readOnlyEdit` and `onCellEditRequest`, with undo handled by that owner.
+
 Adding a row marks it dirty. Deletion requires confirmation and is staged; Save all commits staged deletions and Revert all restores them before saving. Native undo/redo handles cell edits, not the complete application transaction history. Sorting, filtering, row replacement and column movement, pinning or visibility changes clear native undo stacks. Columns and Reset State can therefore clear edit history too.
 
 The shell keeps Configuration mounted once visited, preserving in-memory drafts when navigating. Reload starts a fresh mock session. In production, saved configuration would come from an API and draft durability would be an explicit product decision.
@@ -78,11 +86,19 @@ A deterministic 10,000-record sample is aggregated by location, sensor type and 
 
 This is application-level aggregation, not AG Grid's native grouping or `aggFunc` pipeline. Native grouping, pivot, tool panels and integrated charting are documented Enterprise extension points.
 
+Filtering summary rows does not recalculate the underlying sample. Combining group averages would require count weighting and compatible units; the sample is not an aggregate of the entire historical dataset.
+
 ## View state
 
 `useGridState` connects `initialState`, `onStateUpdated` and `onGridPreDestroyed` to storage. Per-grid keys are versioned (`iot-lab:v1:*`). Persisted sections are column order, sizing, pinning, visibility, sorting and filters; unnecessary state and row data are excluded. Shape validation and size/depth bounds protect the Grid API from malformed localStorage. Storage exceptions fall back to usable in-memory interaction.
 
 `initialState` is read on grid construction, not on every render. Partial column-state restoration sets `partialColumnState`. Analytics also provides explicit saved-view restoration. Reset State clears column/filter changes. Theme has its own independent key.
+
+## Cell presentation boundaries
+
+Direct properties use `field`; computed values belong in pure getters that retain numeric types. Formatters change display text without rounding stored measurements, and cached `Intl` formatters avoid per-cell construction. A small React status renderer adds readable text and styling without owning data or performing requests. Provided editors cover numbers, booleans and short option lists; richer selection UI is an edition trade-off described in the [feature matrix](FEATURE_MATRIX.md).
+
+Parsing converts input, while domain validation determines whether it is acceptable. An empty numeric input must not silently become a valid zero. Memoization stabilizes grid props where reference identity matters; it does not make an expensive calculation cheap. DOM virtualization bounds rendered cells, not query CPU or model memory; the [performance report](PERFORMANCE.md) separates those costs.
 
 ## A real Node.js / Timestream boundary
 
