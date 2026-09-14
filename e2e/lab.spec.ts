@@ -27,15 +27,26 @@ test('rejects invalid thresholds and supports undo and redo', async ({
     .locator('[row-id="device-00001"] [col-id="warningThreshold"]')
     .click();
   await page.keyboard.press('Enter');
-  await page
-    .getByRole('spinbutton')
-    .fill(String(original.criticalThreshold + 1));
+  const thresholdEditor = page.getByRole('spinbutton');
+  await thresholdEditor.fill(String(original.criticalThreshold + 1));
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('Edit rejected');
+  // Invalid input blocks the commit instead of discarding it: the editor
+  // stays open, invalid and described, and nothing is rejected after the fact.
+  await expect(thresholdEditor).toBeVisible();
+  await expect(thresholdEditor).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('.ag-aria-description-container')).toContainText(
+    'Warning must be lower than critical.',
+  );
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(
     page.getByText('0 unsaved changes', { exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Dismiss validation' }).click();
+  // Escape still abandons an invalid draft explicitly, without committing it.
+  await page.keyboard.press('Escape');
+  await expect(thresholdEditor).toHaveCount(0);
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
   await renameDevice(page, original.name, 'Undo this edit');
   await expect(
     page.getByText('1 unsaved changes', { exact: true }),
