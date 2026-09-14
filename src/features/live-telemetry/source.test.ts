@@ -36,7 +36,11 @@ function amountFor(
 }
 
 function withoutLastSeen(rows: LiveDevice[]) {
-  return rows.map(({ lastSeen: _lastSeen, ...rest }) => rest);
+  return rows.map((row) => {
+    const rest: Partial<LiveDevice> = { ...row };
+    delete rest.lastSeen;
+    return rest;
+  });
 }
 
 describe('createTelemetrySource', () => {
