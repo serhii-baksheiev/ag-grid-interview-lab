@@ -39,6 +39,8 @@ The used Community modules are registered explicitly in `src/shared/grid/registe
 
 ## Official feature references
 
+Live Telemetry demonstrates the value pipeline in one column set: direct Sensor `field`, numeric warning delta through `valueGetter`, display-only `valueFormatter` for readings/deltas, and the status badge `cellRenderer`. Its diagnostics separate incoming rows/s, callback-confirmed applied rows/s and `asyncTransactionsFlushed` batches/s. The 50 ms window is unchanged; no application coalescing queue is introduced. See [architecture decisions and state ownership](ARCHITECTURE.md).
+
 - [Client-side transactions](https://www.ag-grid.com/react-data-grid/data-update-transactions/) and [high-frequency updates](https://www.ag-grid.com/react-data-grid/data-update-high-frequency/)
 - [Infinite Row Model](https://www.ag-grid.com/react-data-grid/infinite-scrolling/) and [row models overview](https://www.ag-grid.com/react-data-grid/row-models/)
 - [Column filtering](https://www.ag-grid.com/react-data-grid/filtering/) and [Quick Filter](https://www.ag-grid.com/react-data-grid/filter-quick/)

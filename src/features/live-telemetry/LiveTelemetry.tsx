@@ -13,13 +13,18 @@ import { useGridState } from '../../shared/grid/useGridState';
 import { ColumnControls } from '../../shared/grid/ColumnControls';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { liveColumns } from './columns';
+import {
+  ASYNC_TRANSACTION_WINDOW_MS,
+  createCounters,
+  sampleDiagnostics,
+} from './diagnostics';
 export default function LiveTelemetry() {
   const [count, setCount] = useState(1000);
   const [rows] = useState(() => generateLiveDevices(1000));
   const baseline = useRef(rows);
   const [resetting, setResetting] = useState(false);
   const resettingRef = useRef(false);
-  const sample = useRef({ previous: 0, last: 0 });
+  const sample = useRef({ previous: createCounters(), last: 0 });
   const [api, setApi] = useState<GridApi<LiveDevice>>();
   const [running, setRunning] = useState(true);
   const [interval, setIntervalMs] = useState(250);
@@ -27,8 +32,10 @@ export default function LiveTelemetry() {
   const [burst, setBurst] = useState(false);
   const [search, setSearch] = useState('');
   const [showLocation, setShowLocation] = useState(true);
-  const [metrics, setMetrics] = useState({ received: 0, applied: 0, rate: 0 });
-  const counters = useRef({ received: 0, applied: 0, tick: 0 });
+  const [metrics, setMetrics] = useState(() =>
+    sampleDiagnostics(createCounters(), createCounters(), 0),
+  );
+  const counters = useRef(createCounters());
   const state = useGridState('live');
   useEffect(() => {
     if (!api || !running) return;
@@ -83,18 +90,8 @@ export default function LiveTelemetry() {
       const { previous, last } = sample.current;
       const now = performance.now();
       const current = counters.current;
-      setMetrics({
-        received: current.received,
-        applied: current.applied,
-        rate: Math.round(
-          ((current.received >= previous
-            ? current.received - previous
-            : current.received) *
-            1000) /
-            (now - last),
-        ),
-      });
-      sample.current = { previous: current.received, last: now };
+      setMetrics(sampleDiagnostics(current, previous, now - last));
+      sample.current = { previous: { ...current }, last: now };
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
@@ -117,9 +114,9 @@ export default function LiveTelemetry() {
     const remove = baseline.current.slice(next);
     baseline.current = seeded;
     setCount(next);
-    counters.current = { received: 0, applied: 0, tick: 0 };
-    sample.current = { previous: 0, last: performance.now() };
-    setMetrics({ received: 0, applied: 0, rate: 0 });
+    counters.current = createCounters();
+    sample.current = { previous: createCounters(), last: performance.now() };
+    setMetrics(sampleDiagnostics(counters.current, sample.current.previous, 0));
     const length = Math.max(update.length, add.length, remove.length);
     if (!length) return;
     resettingRef.current = true;
@@ -170,23 +167,35 @@ export default function LiveTelemetry() {
             {metrics.rate.toLocaleString('en-US')}
             <em>evt/s</em>
           </strong>
-          <small>Local observed input rate</small>
+          <small>Submitted telemetry row updates</small>
         </div>
         <div className="metric">
           <span>APPLIED UPDATES</span>
           <strong>{metrics.applied.toLocaleString('en-US')}</strong>
           <small>
-            {metrics.received.toLocaleString('en-US')} received · async batching
+            <span aria-label="Applied row updates / second">
+              {metrics.appliedRate.toLocaleString('en-US')} rows/s
+            </span>
+            {' · '}
+            {metrics.received.toLocaleString('en-US')} received
           </small>
         </div>
         <div className="metric accent">
           <span>TRANSACTION WINDOW</span>
           <strong>
-            50<em>ms</em>
+            {ASYNC_TRANSACTION_WINDOW_MS} <em>ms</em>
           </strong>
-          <small>Coalesced by AG Grid</small>
+          <small aria-label="Async batches / second">
+            {metrics.batchRate.toLocaleString('en-US')} batches/s
+          </small>
         </div>
       </div>
+      <p className="notice">
+        Rates sampled every second: input rows → confirmed row updates → grid
+        batches. One batch may contain multiple transactions; batch counts
+        include reset/resize work. Row counters cover telemetry only. Fleet size
+        is the target while resizing.
+      </p>
       <div className="panel">
         <div className="toolbar">
           <label>
@@ -292,7 +301,10 @@ export default function LiveTelemetry() {
             defaultColDef={defaultColDef}
             getRowId={getRowId}
             quickFilterText={search}
-            asyncTransactionWaitMillis={50}
+            asyncTransactionWaitMillis={ASYNC_TRANSACTION_WINDOW_MS}
+            onAsyncTransactionsFlushed={() => {
+              counters.current.batches++;
+            }}
             initialState={state.initialState}
             onStateUpdated={(e) => {
               state.onStateUpdated(e);
