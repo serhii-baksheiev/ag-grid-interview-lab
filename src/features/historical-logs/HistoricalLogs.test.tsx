@@ -12,6 +12,8 @@ const mocked = vi.hoisted(() => ({
     | {
         onGridReady?: (event: unknown) => void;
         onStateUpdated?: (event: unknown) => void;
+        getRowId?: unknown;
+        rowBuffer?: unknown;
       }
     | undefined,
 }));
@@ -76,6 +78,16 @@ describe('Historical Logs screen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('gives the infinite grid no getRowId: nothing on this screen consumes row ids', () => {
+    renderReadyHistory();
+    expect(mocked.gridProps?.getRowId).toBeUndefined();
+  });
+
+  it('gives the infinite grid no rowBuffer override, leaving AG Grid default of 10', () => {
+    renderReadyHistory();
+    expect(mocked.gridProps?.rowBuffer).toBeUndefined();
+  });
+
   it('does not replace newer device typing with a non-filter state update', async () => {
     vi.useFakeTimers();
     const api = renderReadyHistory();
@@ -88,7 +100,13 @@ describe('Historical Logs screen', () => {
     fireEvent.change(input, { target: { value: 'device-00' } });
     await act(async () => vi.advanceTimersByTimeAsync(350));
     fireEvent.change(input, { target: { value: 'device-000' } });
-    act(() => mocked.gridProps?.onStateUpdated?.({ api, sources: ['scroll'] }));
+    act(() =>
+      mocked.gridProps?.onStateUpdated?.({
+        api,
+        sources: ['scroll'],
+        state: {},
+      }),
+    );
 
     expect(input).toHaveValue('device-000');
   });
@@ -111,7 +129,13 @@ describe('Historical Logs screen', () => {
     });
     const input = screen.getByPlaceholderText('device-00001');
     fireEvent.change(input, { target: { value: 'device-0001' } });
-    act(() => mocked.gridProps?.onStateUpdated?.({ api, sources: ['filter'] }));
+    act(() =>
+      mocked.gridProps?.onStateUpdated?.({
+        api,
+        sources: ['filter'],
+        state: {},
+      }),
+    );
     expect(input).toHaveValue('device-0001');
     await act(async () => vi.advanceTimersByTimeAsync(350));
     expect(api.setFilterModel).toHaveBeenLastCalledWith({

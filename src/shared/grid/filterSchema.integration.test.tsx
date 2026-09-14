@@ -22,7 +22,10 @@ const defaultFilterFor: Record<string, FilterType | undefined> = {
   false: 'text',
   undefined: 'text',
   text: 'text',
-  boolean: 'text',
+  // AG Grid's own default filter for a boolean-typed column still emits a
+  // text-typed 'true'/'false' filterModel; the schema tracks the intent as
+  // 'boolean' so restoration can restrict the accepted text filter types.
+  boolean: 'boolean',
   object: 'text',
   number: 'number',
   date: 'date',

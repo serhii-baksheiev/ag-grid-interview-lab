@@ -134,7 +134,7 @@ describe('createTelemetrySource', () => {
     expect(eighth).toHaveLength(changes * 10);
   });
 
-  it('never ticks without burst enabled produce more than `changes` rows, even on the 8th tick', () => {
+  it('without burst, no tick produces more than `changes` rows, even the 8th', () => {
     const size = 1000;
     const changes = 50;
     const source = createTelemetrySource(size);

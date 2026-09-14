@@ -703,3 +703,19 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
     MAIN_THREAD_BUDGET_MS,
   );
 });
+
+test('filters the live grid to a single sensor by search, then clears it', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Pause stream' }).click();
+  const target = generateDevices(2)[1]!.name;
+  const search = page.getByLabel('Search live', { exact: true });
+  await search.fill(target);
+  const nameCells = page.locator('[role="gridcell"][col-id="name"]');
+  await expect(nameCells).toHaveCount(1);
+  await expect(nameCells.first()).toHaveText(target);
+
+  await search.fill('');
+  await expect.poll(async () => nameCells.count()).toBeGreaterThan(1);
+});
