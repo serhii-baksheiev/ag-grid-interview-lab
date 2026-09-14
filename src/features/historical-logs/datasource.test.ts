@@ -159,6 +159,28 @@ describe('asynchronous historical datasource', () => {
     );
     replacement.destroy?.();
   });
+  it('reports an unsupported filter model as a failed request, never as rows', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 0,
+      fail: () => false,
+      onStatus,
+    });
+    const unsupported = request(0, {
+      deviceId: { filterType: 'text', type: 'regex', filter: 'device' },
+    });
+    source.getRows(unsupported);
+    await vi.runAllTimersAsync();
+    expect(unsupported.successCallback).not.toHaveBeenCalled();
+    expect(unsupported.failCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 0,
+      error: true,
+    });
+    source.destroy?.();
+  });
   it('settles calls queued after destruction exactly once', () => {
     const source = createHistoryDatasource({
       total: 100,
@@ -195,7 +217,11 @@ describe('asynchronous historical datasource', () => {
     const current = request();
     source.getRows(current);
     expect(old.failCallback).toHaveBeenCalledOnce();
-    resolveIndex({ indices: null, total: 100 });
+    resolveIndex({
+      indices: null,
+      total: 100,
+      stats: { filtered: 0, keyed: 0, mergePasses: 0, yields: 0 },
+    });
     await vi.runAllTimersAsync();
     expect(old.successCallback).not.toHaveBeenCalled();
     expect(old.failCallback).toHaveBeenCalledOnce();

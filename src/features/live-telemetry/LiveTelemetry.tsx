@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { GridApi } from 'ag-grid-community';
-import {
-  generateLiveDevices,
-  randomAt,
-  sensorSpecs,
-  statusFor,
-} from '../../shared/data/generator';
 import type { LiveDevice } from '../../shared/types';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { useGridState } from '../../shared/grid/useGridState';
@@ -19,11 +13,13 @@ import {
   createCounters,
   sampleDiagnostics,
 } from './diagnostics';
+import { createTelemetrySource } from './source';
 const filterSchema = filterSchemaFor(liveColumns, defaultColDef);
 export default function LiveTelemetry() {
   const [count, setCount] = useState(1000);
-  const [rows] = useState(() => generateLiveDevices(1000));
-  const baseline = useRef(rows);
+  // The source owns the fleet; the grid receives its first snapshot, then transactions.
+  const [source] = useState(() => createTelemetrySource(1000));
+  const [rows] = useState(() => source.rows());
   const [resetting, setResetting] = useState(false);
   const resettingRef = useRef(false);
   const sample = useRef({ previous: createCounters(), last: 0 });
@@ -43,37 +39,11 @@ export default function LiveTelemetry() {
     if (!api || !running) return;
     const timer = window.setInterval(() => {
       if (resettingRef.current) return;
-      const tick = ++counters.current.tick;
-      const amount = Math.min(
-        count,
-        changes * (burst && tick % 8 === 0 ? 10 : 1),
-      );
-      const updates: LiveDevice[] = [];
-      const offset = Math.floor(randomAt(tick) * count);
-      for (let i = 0; i < amount; i++) {
-        const index = (offset + i) % count;
-        const previous = api.getRowNode(
-          `device-${String(index + 1).padStart(5, '0')}`,
-        )?.data;
-        if (!previous) continue;
-        const spec = sensorSpecs[previous.type];
-        const value =
-          Math.round(
-            (spec.min +
-              randomAt(tick * count + index) * (spec.max - spec.min)) *
-              100,
-          ) / 100;
-        updates.push({
-          ...previous,
-          value,
-          status: statusFor(
-            value,
-            previous.warningThreshold,
-            previous.criticalThreshold,
-          ),
-          lastSeen: new Date().toISOString(),
-        });
-      }
+      const updates = source.tick({
+        changes,
+        burst,
+        lastSeen: new Date().toISOString(),
+      });
       counters.current.received += updates.length;
       // Capture this generation: deferred callbacks cannot credit a later reset.
       const accounting = counters.current;
@@ -85,7 +55,7 @@ export default function LiveTelemetry() {
       window.clearInterval(timer);
       if (!api.isDestroyed()) api.flushAsyncTransactions();
     };
-  }, [api, running, interval, changes, burst, count]);
+  }, [api, source, running, interval, changes, burst]);
   useEffect(() => {
     sample.current.last = performance.now();
     const timer = window.setInterval(() => {
@@ -99,22 +69,9 @@ export default function LiveTelemetry() {
   }, []);
   function resetData(next = count) {
     if (!api || resettingRef.current) return;
-    api?.flushAsyncTransactions();
-    const seeded =
-      next === count ? baseline.current : generateLiveDevices(next);
-    const update = seeded.filter((row) => {
-      const current = api.getRowNode(row.id)?.data;
-      return (
-        current &&
-        Object.keys(row).some(
-          (key) =>
-            current[key as keyof LiveDevice] !== row[key as keyof LiveDevice],
-        )
-      );
-    });
-    const add = seeded.filter((row) => !api.getRowNode(row.id));
-    const remove = baseline.current.slice(next);
-    baseline.current = seeded;
+    // Queued ticks land before the reset batches that supersede them.
+    api.flushAsyncTransactions();
+    const { update, add, remove } = source.reset(next);
     setCount(next);
     counters.current = createCounters();
     sample.current = { previous: createCounters(), last: performance.now() };

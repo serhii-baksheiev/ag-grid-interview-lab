@@ -8,6 +8,8 @@ import {
 } from '../types';
 export const DEMO_SEED = 42;
 export const EPOCH = Date.UTC(2026, 8, 1, 12);
+/** Historical records cycle through this many devices: record `index` belongs to device `index % 1000`. */
+export const HISTORY_FLEET_SIZE = 1000;
 export const locations = [
   'North plant',
   'Cold storage',
@@ -40,22 +42,54 @@ export function statusFor(
       ? 'warning'
       : 'normal';
 }
+// Field primitives: each historical field is a pure function of the record index,
+// so a query can read one field without building the whole record.
+const deviceIdFor = (deviceIndex: number) =>
+  `device-${String(deviceIndex + 1).padStart(5, '0')}`;
+const locationIndexFor = (deviceIndex: number) =>
+  Math.floor(deviceIndex / 6) % locations.length;
+export function sensorTypeIndexAt(index: number): number {
+  return (index % HISTORY_FLEET_SIZE) % sensorTypes.length;
+}
+export function locationIndexAt(index: number): number {
+  return locationIndexFor(index % HISTORY_FLEET_SIZE);
+}
+export function deviceIdAt(index: number): string {
+  return deviceIdFor(index % HISTORY_FLEET_SIZE);
+}
+export function measurementAt(
+  index: number,
+  type: SensorType,
+  seed = DEMO_SEED,
+): number {
+  const spec = sensorSpecs[type];
+  return (
+    Math.round(
+      (spec.min + randomAt(index, seed) * (spec.max - spec.min)) * 100,
+    ) / 100
+  );
+}
+export function qualityAt(index: number, seed = DEMO_SEED): number {
+  return Math.floor(90 + randomAt(index + 17, seed) * 11);
+}
+export function timestampMsAt(index: number): number {
+  return EPOCH + index * 1000;
+}
 export function telemetryAt(index: number, seed = DEMO_SEED): Telemetry {
-  const deviceIndex = index % 1000;
-  const type = sensorTypes[deviceIndex % sensorTypes.length];
+  const type = sensorTypes[sensorTypeIndexAt(index)];
   const spec = sensorSpecs[type];
   const value = measurementAt(index, type, seed);
   const status = statusFor(value, spec.warning, spec.critical);
   return {
     id: `log-${index}`,
-    deviceId: `device-${String(deviceIndex + 1).padStart(5, '0')}`,
-    timestamp: new Date(EPOCH + index * 1000).toISOString(),
-    location: locations[Math.floor(deviceIndex / 6) % locations.length],
+    deviceId: deviceIdAt(index),
+    timestamp: new Date(timestampMsAt(index)).toISOString(),
+    location: locations[locationIndexAt(index)],
     type,
     value,
     unit: spec.unit,
     status,
-    quality: Math.floor(90 + randomAt(index + 17, seed) * 11),
+    quality: qualityAt(index, seed),
     ...(status === 'critical' ? { message: 'THRESHOLD_EXCEEDED' } : {}),
   };
 }
@@ -64,10 +98,10 @@ export function generateDevices(count: number, seed = DEMO_SEED): Device[] {
     const type = sensorTypes[i % sensorTypes.length];
     const spec = sensorSpecs[type];
     return {
-      id: `device-${String(i + 1).padStart(5, '0')}`,
+      id: deviceIdFor(i),
       name: `${type[0].toUpperCase() + type.slice(1)} ${String(i + 1).padStart(4, '0')}`,
       type,
-      location: locations[Math.floor(i / 6) % locations.length],
+      location: locations[locationIndexFor(i)],
       status: statusFor(
         measurementAt(i, type, seed),
         spec.warning,
@@ -89,14 +123,6 @@ export function generateLiveDevices(
   return generateDevices(count, seed).map((device, i) => ({
     ...device,
     value: measurementAt(i, device.type, seed),
-    quality: Math.floor(90 + randomAt(i + 17, seed) * 11),
+    quality: qualityAt(i, seed),
   }));
-}
-function measurementAt(index: number, type: SensorType, seed: number): number {
-  const spec = sensorSpecs[type];
-  return (
-    Math.round(
-      (spec.min + randomAt(index, seed) * (spec.max - spec.min)) * 100,
-    ) / 100
-  );
 }

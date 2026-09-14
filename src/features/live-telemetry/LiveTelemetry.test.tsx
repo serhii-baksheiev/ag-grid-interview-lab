@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeLiveGrid, type Transaction } from '../../test/fakeLiveGrid';
+import { generateLiveDevices } from '../../shared/data/generator';
 
 const harness = vi.hoisted(() => ({
   grid: undefined as ReturnType<typeof createFakeLiveGrid> | undefined,
@@ -186,6 +187,49 @@ describe('Live Telemetry with AG Grid async transaction semantics', () => {
     expect(new Set(sorted.map((data) => getRowId!({ data }))).size).toBe(
       sorted.length,
     );
-    expect(grid.api.getRowNode(first.id)?.data).toBe(first);
+    expect(grid.rows.get(first.id)).toBe(first);
+  });
+
+  it('never reads row data back from the grid: ticks, a burst, a same-size reset, and a resize', async () => {
+    const { grid } = mount();
+    const getRowNode = vi.spyOn(grid.api, 'getRowNode');
+
+    select('Tick interval', '100');
+    select('Changes / tick', '50');
+    await advance(300); // a few ordinary ticks
+
+    select('Changes / tick', '1000');
+    fireEvent.click(screen.getByLabelText('Burst every 8 ticks'));
+    await advance(800); // through a burst tick
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
+    await advance(2000); // drain the same-size reset
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    select('Devices', '100');
+    await advance(2000); // drain the resize down to 100
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    expect(getRowNode).not.toHaveBeenCalled();
+    expect(grid.rows.size).toBe(100);
+  });
+
+  it('ends a reset in the exact seeded state, built purely from submitted transactions', async () => {
+    const { grid } = mount();
+    select('Tick interval', '100');
+    select('Changes / tick', '200');
+    await advance(500); // several ticks with changes
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
+    await advance(2000); // drain the reset
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    const seeded = generateLiveDevices(1000);
+    expect(grid.rows.size).toBe(1000);
+    for (const device of seeded) {
+      expect(grid.rows.get(device.id)).toEqual(device);
+    }
   });
 });

@@ -32,6 +32,10 @@ interface GridProps {
  *   `setTimeout(…, 0)`, then dispatches `asyncTransactionsFlushed` synchronously;
  * - after destroy, API calls are refused and counted, like the real grid's
  *   "grid has been destroyed" warning.
+ *
+ * `rows` is what the grid would display, kept so tests can check the result of
+ * the submitted transactions. The screen owns its fleet (`source.ts`), so the
+ * fake refuses to hand row data back: `getRowNode` throws.
  */
 export function createFakeLiveGrid() {
   const rows = new Map<string, LiveDevice>();
@@ -92,9 +96,10 @@ export function createFakeLiveGrid() {
         flush();
       }
     },
-    getRowNode(id: string) {
-      const data = rows.get(id);
-      return data ? { data } : undefined;
+    getRowNode() {
+      throw new Error(
+        'Live Telemetry must not read its rows back from the grid',
+      );
     },
     isDestroyed: () => destroyed,
     setGridAriaProperty() {},

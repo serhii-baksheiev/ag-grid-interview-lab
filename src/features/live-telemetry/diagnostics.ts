@@ -1,7 +1,7 @@
 export const ASYNC_TRANSACTION_WINDOW_MS = 50;
 
 export function createCounters() {
-  return { received: 0, applied: 0, batches: 0, tick: 0 };
+  return { received: 0, applied: 0, batches: 0 };
 }
 
 export function sampleDiagnostics(
