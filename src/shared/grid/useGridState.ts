@@ -4,13 +4,19 @@ import type {
   GridPreDestroyedEvent,
   StateUpdatedEvent,
 } from 'ag-grid-community';
+import type { FilterSchema } from './filterSchema';
 import { readState, writeState } from './storage';
-export function useGridState(name: string) {
+/**
+ * Persist and restore a grid's view state under a per-grid key. `schema` names
+ * the columns that can carry a filter and their filter type, so a stored filter
+ * for another column or type never reaches the grid (see `filterSchemaFor`).
+ */
+export function useGridState(name: string, schema?: FilterSchema) {
   const key = `iot-lab:v1:${name}`;
   const initialState = useMemo(() => {
-    const state = readState(key);
+    const state = readState(key, undefined, schema);
     return state ? { ...state, partialColumnState: true } : undefined;
-  }, [key]);
+  }, [key, schema]);
   const onStateUpdated = useCallback(
     (event: StateUpdatedEvent) => {
       writeState(key, event.state);
@@ -37,11 +43,11 @@ export function useGridState(name: string) {
   );
   const restoreView = useCallback(
     (api: GridApi) => {
-      const state = readState(`${key}:saved`);
+      const state = readState(`${key}:saved`, undefined, schema);
       if (state) api.setState(state);
       return !!state;
     },
-    [key],
+    [key, schema],
   );
   return {
     initialState,

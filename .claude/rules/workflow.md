@@ -18,8 +18,17 @@ that reproduces the bug.
 - Never delete, skip, or weaken a test to make a run green.
 - A flaky test is a defect to investigate, **not** a thing to re-run until it
   passes (see stop rules in `autonomy.md`).
-- Fast checks run pre-commit; the full suite runs in CI. Bypassing pre-commit
-  (`--no-verify`) is refused by a hook — fix the failure instead.
+- The full suite runs in CI and, before a session may end, through the
+  Definition-of-Done gate (`.claude/hooks/dod-checks.json`). This repository
+  installs **no commit-time hook** — there is no `.husky/` and no
+  `core.hooksPath` — so nothing runs at `git commit` itself. `block-no-verify`
+  still refuses `--no-verify` / `git commit -n` at the tool layer (what it
+  refuses and what it cannot see is stated in the header of
+  `.claude/hooks/block-no-verify.mjs`; its tests live in the generator that
+  produced it, absent in a generated rig): the flag is refused so a bypass
+  never becomes routine, not because a check exists for it to bypass. If a
+  commit-time check is ever added, that refusal is already in place; until
+  then, the checks that gate a change are the DoD gate and CI.
 
 ## Branches and commits
 

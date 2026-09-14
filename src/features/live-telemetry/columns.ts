@@ -41,6 +41,8 @@ export const liveColumns: ColDef<LiveDevice>[] = [
     field: 'lastSeen',
     headerName: 'Last seen',
     width: 200,
+    // Declared, not inferred: the persisted-filter schema must know this is a date column.
+    cellDataType: 'dateTimeString',
     valueFormatter: (p) => formatTimestamp(p.value),
   },
   { field: 'id', headerName: 'Device ID', hide: true, width: 180 },

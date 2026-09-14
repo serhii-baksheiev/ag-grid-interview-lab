@@ -1,6 +1,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { generateDevices } from '../src/shared/data/generator';
+import { generateDevices, telemetryAt } from '../src/shared/data/generator';
+import { failOnBrowserErrors } from './browserErrors';
+import {
+  startResponsivenessProbe,
+  stopResponsivenessProbe,
+} from './responsiveness';
+
+failOnBrowserErrors(test);
+// Far below the multi-second block of an unyielding 500k scan, above CI paint/GC noise.
+const MAIN_THREAD_BUDGET_MS = 250;
 
 async function openView(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).click();
@@ -264,20 +273,275 @@ test('focuses the safe cancellation choice in the delete confirmation', async ({
   ).toBeFocused();
 });
 
-test('describes an invalid name editor error to assistive technology', async ({
+for (const invalid of [' ', '   '])
+  test(`blocks committing the invalid name ${JSON.stringify(invalid)} with Enter and describes the error`, async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await openView(page, 'Device Configuration');
+    const original = generateDevices(1)[0]!.name;
+    await page
+      .getByRole('gridcell', { name: original, exact: true })
+      .dblclick();
+    const editor = page.getByRole('textbox', { name: 'Device name editor' });
+    await editor.fill(invalid);
+    await expect(editor).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = await editor.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    await expect(page.locator(`#${describedBy}`)).toContainText(
+      /1–80 characters/,
+    );
+
+    await page.keyboard.press('Enter');
+    // The commit is blocked, not discarded: the editor stays open, focused and invalid.
+    await expect(editor).toBeVisible();
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveAttribute('aria-invalid', 'true');
+    await expect(editor).toHaveValue(invalid);
+    await expect(page.locator('.ag-aria-description-container')).toContainText(
+      /Name must contain 1–80 characters/,
+    );
+    await expect(
+      page.getByText('0 unsaved changes', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    // Clicking away does not commit or discard either: block mode holds the editor.
+    await page
+      .getByRole('gridcell', { name: generateDevices(2)[1]!.name, exact: true })
+      .click();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue(invalid);
+    await expect(
+      page.getByText('0 unsaved changes', { exact: true }),
+    ).toBeVisible();
+
+    await editor.fill('Corrected sensor');
+    await expect(editor).toHaveAttribute('aria-invalid', 'false');
+    await page.keyboard.press('Enter');
+    await expect(editor).toHaveCount(0);
+    await expect(
+      page.getByRole('gridcell', { name: 'Corrected sensor', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText('1 unsaved changes', { exact: true }),
+    ).toBeVisible();
+
+    // Escape still abandons an invalid draft explicitly.
+    await page
+      .getByRole('gridcell', { name: 'Corrected sensor', exact: true })
+      .dblclick();
+    await editor.fill(' ');
+    await page.keyboard.press('Escape');
+    await expect(editor).toHaveCount(0);
+    await expect(
+      page.getByRole('gridcell', { name: 'Corrected sensor', exact: true }),
+    ).toBeVisible();
+  });
+
+test('saves a selected new row into the baseline without losing other rows or drafts', async ({
   page,
 }) => {
   await page.goto('/');
   await openView(page, 'Device Configuration');
+  await visibleGrid(page);
+  const [first, second] = generateDevices(2);
+  await renameFirstDevice(page, 'Existing draft');
+  await page.getByRole('button', { name: 'Add device', exact: true }).click();
+  await expect(
+    page.getByText('2 unsaved changes', { exact: true }),
+  ).toBeVisible();
+  const added = page.getByRole('row').filter({
+    has: page.getByRole('gridcell', { name: 'New sensor 101', exact: true }),
+  });
+  await added.getByRole('checkbox').first().check();
   await page
-    .getByRole('gridcell', { name: generateDevices(1)[0]!.name, exact: true })
+    .getByRole('button', { name: 'Save selected', exact: true })
+    .click();
+  await expect(
+    page.getByText('Saved successfully', { exact: true }),
+  ).toBeVisible();
+  // Only the saved row left the dirty set; the unsaved rename remains.
+  await expect(
+    page.getByText('1 unsaved changes', { exact: true }),
+  ).toBeVisible();
+  const unsaved = page.getByRole('region', { name: 'Unsaved change list' });
+  await expect(unsaved).toContainText('Existing draft: modified');
+  await expect(unsaved).not.toContainText('New sensor 101');
+  // The saved row is now baseline: editing it is a modification, not a new device.
+  await page
+    .getByRole('gridcell', { name: 'New sensor 101', exact: true })
     .dblclick();
-  const editor = page.getByRole('textbox', { name: 'Device name editor' });
-  await editor.fill(' ');
-  await expect(editor).toHaveAttribute('aria-invalid', 'true');
-  const describedBy = await editor.getAttribute('aria-describedby');
-  expect(describedBy).toBeTruthy();
-  await expect(page.locator(`#${describedBy}`)).toContainText(/name/i);
+  await page
+    .getByRole('textbox', { name: 'Device name editor' })
+    .fill('Saved then renamed');
+  await page.keyboard.press('Enter');
+  await expect(unsaved).toContainText('Saved then renamed: modified');
+  await expect(
+    page.getByText('2 unsaved changes', { exact: true }),
+  ).toBeVisible();
+  // Reverting everything restores the saved name and keeps every original row.
+  await page.getByRole('button', { name: 'Revert all', exact: true }).click();
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: first!.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('gridcell', { name: second!.name, exact: true }),
+  ).toBeVisible();
+  // Saving a selection appends the new row to the baseline; jump the virtualised body to it.
+  await page.getByRole('gridcell', { name: first!.name, exact: true }).click();
+  await page.keyboard.press('Control+End');
+  await expect(
+    page.getByRole('gridcell', { name: 'New sensor 101', exact: true }),
+  ).toBeVisible();
+});
+
+test('keeps the Columns checkboxes in step with the grid after Reset State', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Analytics');
+  await visibleGrid(page);
+  await page.getByText('Columns', { exact: true }).click();
+  const average = page.getByLabel('Average', { exact: true });
+  await average.uncheck();
+  await expect(
+    page.getByRole('columnheader', { name: 'Average', exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reset State', exact: true }).click();
+  await expect(
+    page.getByRole('columnheader', { name: 'Average', exact: true }),
+  ).toBeVisible();
+  await expect(average).toBeChecked();
+  // The first click after the reset acts on the live state: it hides the column.
+  await average.click();
+  await expect(average).not.toBeChecked();
+  await expect(
+    page.getByRole('columnheader', { name: 'Average', exact: true }),
+  ).toHaveCount(0);
+  // Restore view drives visibility from the grid as well.
+  await page.getByRole('button', { name: 'Save view', exact: true }).click();
+  await average.check();
+  await page.getByRole('button', { name: 'Restore view', exact: true }).click();
+  await expect(page.getByText('View restored', { exact: true })).toBeVisible();
+  await expect(average).not.toBeChecked();
+});
+
+test('filters historical timestamps by the displayed UTC value', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Historical Logs');
+  await visibleGrid(page);
+  await page.getByLabel('Network latency', { exact: true }).selectOption('0');
+  const matching = page
+    .getByText('Matching records', { exact: true })
+    .locator('..')
+    .locator('strong');
+  await expect(matching).toHaveText('100,000');
+  const floating = page.locator(
+    '.ag-floating-filter[col-id="timestamp"] input[type="datetime-local"]',
+  );
+  // Record 65 is displayed as 01 Sept, 12:01:05 UTC; the picker takes that value as UTC.
+  await floating.fill('2026-09-01T12:01:05');
+  await expect(matching).toHaveText('1');
+  await expect(page.locator('[row-index="0"] [col-id="timestamp"]')).toHaveText(
+    '01 Sept, 12:01:05 UTC',
+  );
+  await expect(page.locator('[row-index="0"] [col-id="deviceId"]')).toHaveText(
+    telemetryAt(65).deviceId,
+  );
+  await floating.fill('');
+  await expect(matching).toHaveText('100,000');
+  await expect(page.locator('[row-index="0"] [col-id="timestamp"]')).toHaveText(
+    '01 Sept, 12:00:00 UTC',
+  );
+});
+
+test('restores a persisted Last seen date filter on the live grid', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'iot-lab:v1:live',
+      JSON.stringify({
+        version: '36.1.0',
+        filter: {
+          filterModel: {
+            lastSeen: {
+              filterType: 'date',
+              type: 'greaterThan',
+              dateFrom: '2030-01-01 00:00:00',
+            },
+          },
+        },
+      }),
+    );
+  });
+  await page.reload();
+  await visibleGrid(page, 'Live telemetry grid');
+  // Every seeded row is last seen in 2026, so a restored filter leaves no rows.
+  await expect(page.getByRole('gridcell')).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem('iot-lab:v1:live')!).filter
+            ?.filterModel?.lastSeen?.filterType,
+      ),
+    )
+    .toBe('date');
+  await page.getByRole('button', { name: 'Reset State', exact: true }).click();
+  await expect(page.getByRole('gridcell').first()).toBeVisible();
+});
+
+test('restores a persisted timestamp range filter and drops filters the columns cannot hold', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'iot-lab:v1:history',
+      JSON.stringify({
+        version: '36.1.0',
+        filter: {
+          filterModel: {
+            timestamp: {
+              filterType: 'date',
+              type: 'inRange',
+              dateFrom: '2026-09-01 12:00:10',
+              dateTo: '2026-09-01 12:00:19',
+            },
+            value: { filterType: 'text', type: 'contains', filter: '4' },
+            ghost: { filterType: 'number', type: 'equals', filter: 1 },
+          },
+        },
+      }),
+    );
+  });
+  await openView(page, 'Historical Logs');
+  await visibleGrid(page);
+  const matching = page
+    .getByText('Matching records', { exact: true })
+    .locator('..')
+    .locator('strong');
+  await expect(matching).toHaveText('10');
+  await expect(page.locator('[row-index="0"] [col-id="timestamp"]')).toHaveText(
+    '01 Sept, 12:00:10 UTC',
+  );
+  await page.getByText('Request inspector', { exact: false }).click();
+  const query = page.locator('pre').first();
+  await expect(query).toContainText('"timestamp"');
+  await expect(query).not.toContainText('"value"');
+  await expect(query).not.toContainText('"ghost"');
+  await page.getByRole('button', { name: 'Reset State', exact: true }).click();
+  await expect(matching).toHaveText('100,000');
+  await page.reload();
+  await openView(page, 'Historical Logs');
+  await expect(matching).toHaveText('100,000');
 });
 
 test('does not apply Ctrl+Z while a pessimistic save is pending', async ({
@@ -408,6 +672,7 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
   await expect(
     page.locator('[row-index="0"] [col-id="value"]'),
   ).not.toBeEmpty();
+  await startResponsivenessProbe(page);
   await page.locator('[role="columnheader"][col-id="value"]').click();
   await page.getByRole('button', { name: 'Use dark theme' }).click();
   await expect(
@@ -419,6 +684,7 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
       .locator('..')
       .locator('strong'),
   ).toHaveText('0', { timeout: 30000 });
+  const sample = await stopResponsivenessProbe(page);
   await expect(page.locator('[row-index="0"] [col-id="value"]')).toHaveText(
     '0',
   );
@@ -427,4 +693,11 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
     .allTextContents();
   expect(values.length).toBeGreaterThan(1);
   expect(values.map(Number)).toEqual(values.map(Number).sort((a, b) => a - b));
+  // The scan yields cooperatively: no single task, and no timer starvation, near the budget.
+  expect(sample.longestTaskMs, JSON.stringify(sample)).toBeLessThan(
+    MAIN_THREAD_BUDGET_MS,
+  );
+  expect(sample.maxTimerDriftMs, JSON.stringify(sample)).toBeLessThan(
+    MAIN_THREAD_BUDGET_MS,
+  );
 });

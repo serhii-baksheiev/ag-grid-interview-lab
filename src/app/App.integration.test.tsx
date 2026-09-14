@@ -149,3 +149,43 @@ describe('IoT console integration', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+describe('invalid name commits', () => {
+  it('keeps the name editor open with an accessible error instead of discarding the edit', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const cell = await screen.findByRole('gridcell', {
+      name: generateDevices(1)[0]!.name,
+    });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Device name editor',
+    });
+    fireEvent.change(editor, { target: { value: '   ' } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+
+    expect(screen.getByRole('textbox', { name: 'Device name editor' })).toBe(
+      editor,
+    );
+    expect(editor).toHaveAttribute('aria-invalid', 'true');
+    expect(editor).toHaveAccessibleDescription(/1–80 characters/);
+    expect(
+      screen.getByText('0 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(editor, { target: { value: 'Corrected name' } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(
+      await screen.findByRole('gridcell', { name: 'Corrected name' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: 'Device name editor' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+  });
+});

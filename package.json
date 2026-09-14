@@ -25,7 +25,8 @@
     "test:unit": "vitest run --exclude '**/*.integration.test.tsx' && npm run test:benchmark",
     "test:benchmark": "node --test scripts/require-abort.test.mjs",
     "test:integration": "vitest run src/app",
-    "test:e2e": "playwright test"
+    "test:e2e": "npm run build && npm run test:e2e:ci",
+    "test:e2e:ci": "playwright test"
   },
   "dependencies": {
     "ag-grid-community": "36.1.0",

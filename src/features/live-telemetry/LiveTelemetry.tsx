@@ -11,6 +11,7 @@ import type { LiveDevice } from '../../shared/types';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { useGridState } from '../../shared/grid/useGridState';
 import { ColumnControls } from '../../shared/grid/ColumnControls';
+import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { liveColumns } from './columns';
 import {
@@ -18,6 +19,7 @@ import {
   createCounters,
   sampleDiagnostics,
 } from './diagnostics';
+const filterSchema = filterSchemaFor(liveColumns, defaultColDef);
 export default function LiveTelemetry() {
   const [count, setCount] = useState(1000);
   const [rows] = useState(() => generateLiveDevices(1000));
@@ -36,7 +38,7 @@ export default function LiveTelemetry() {
     sampleDiagnostics(createCounters(), createCounters(), 0),
   );
   const counters = useRef(createCounters());
-  const state = useGridState('live');
+  const state = useGridState('live', filterSchema);
   useEffect(() => {
     if (!api || !running) return;
     const timer = window.setInterval(() => {

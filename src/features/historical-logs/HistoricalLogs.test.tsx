@@ -119,3 +119,28 @@ describe('Historical Logs screen', () => {
     });
   });
 });
+
+describe('request inspector', () => {
+  it('renders a half-open block range exactly once', () => {
+    renderReadyHistory();
+    act(() =>
+      mocked.datasourceOptions?.onStatus({
+        pending: 0,
+        error: false,
+        total: 100,
+        requests: [
+          {
+            id: 1,
+            range: '[0-200)',
+            query: '[{},[]]',
+            status: 'success',
+            duration: 12,
+          },
+        ],
+      }),
+    );
+    const entry = screen.getByText('#1 [0-200)', { exact: true });
+    expect(entry).toBeInTheDocument();
+    expect(entry.textContent).not.toContain('[[');
+  });
+});

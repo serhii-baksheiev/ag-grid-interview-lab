@@ -1,22 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { generateDevices } from '../src/shared/data/generator';
+import { failOnBrowserErrors } from './browserErrors';
 
-const browserErrors = new Map<object, string[]>();
-test.beforeEach(async ({ page }) => {
-  const errors: string[] = [];
-  browserErrors.set(page, errors);
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(message.text());
-  });
-});
-test.afterEach(async ({ page }) => {
-  expect(
-    browserErrors.get(page) ?? [],
-    'Browser must not report uncaught exceptions or console errors',
-  ).toEqual([]);
-  browserErrors.delete(page);
-});
+failOnBrowserErrors(test);
 
 async function renameDevice(page: Page, oldName: string, newName: string) {
   await page.getByRole('gridcell', { name: oldName, exact: true }).dblclick();

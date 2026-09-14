@@ -37,6 +37,47 @@ function record(value: unknown): Record<string, unknown> | undefined {
     ? (value as Record<string, unknown>)
     : undefined;
 }
+// AG Grid serialises a date filter as a naive `YYYY-MM-DD HH:mm:ss` string. The
+// column displays UTC, so the value is read as UTC: the user filters what they see.
+function utcMs(value: unknown): number {
+  const match =
+    typeof value === 'string'
+      ? /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/.exec(value)
+      : null;
+  return match
+    ? Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        Number(match[4] ?? 0),
+        Number(match[5] ?? 0),
+        Number(match[6] ?? 0),
+      )
+    : NaN;
+}
+// Shared by number and date filters; an unparseable filter value matches nothing.
+function scalar(n: number, type: unknown, from: number, to: number): boolean {
+  if (Number.isNaN(from) || (type === 'inRange' && Number.isNaN(to)))
+    return false;
+  switch (type) {
+    case 'equals':
+      return n === from;
+    case 'notEqual':
+      return n !== from;
+    case 'greaterThan':
+      return n > from;
+    case 'greaterThanOrEqual':
+      return n >= from;
+    case 'lessThan':
+      return n < from;
+    case 'lessThanOrEqual':
+      return n <= from;
+    case 'inRange':
+      return n >= from && n <= to;
+    default:
+      return true;
+  }
+}
 function matches(value: unknown, raw: unknown): boolean {
   const model = record(raw);
   if (!model) return true;
@@ -47,28 +88,20 @@ function matches(value: unknown, raw: unknown): boolean {
   }
   if (model.type === 'blank') return value == null || value === '';
   if (model.type === 'notBlank') return value != null && value !== '';
-  if (model.filterType === 'number') {
-    const n = Number(value),
-      filter = Number(model.filter);
-    switch (model.type) {
-      case 'equals':
-        return n === filter;
-      case 'notEqual':
-        return n !== filter;
-      case 'greaterThan':
-        return n > filter;
-      case 'greaterThanOrEqual':
-        return n >= filter;
-      case 'lessThan':
-        return n < filter;
-      case 'lessThanOrEqual':
-        return n <= filter;
-      case 'inRange':
-        return n >= filter && n <= Number(model.filterTo);
-      default:
-        return true;
-    }
-  }
+  if (model.filterType === 'number')
+    return scalar(
+      Number(value),
+      model.type,
+      Number(model.filter),
+      Number(model.filterTo),
+    );
+  if (model.filterType === 'date')
+    return scalar(
+      Date.parse(String(value)),
+      model.type,
+      utcMs(model.dateFrom),
+      utcMs(model.dateTo),
+    );
   const text = String(value ?? '').toLowerCase(),
     filter = String(model.filter ?? '').toLowerCase();
   switch (model.type) {

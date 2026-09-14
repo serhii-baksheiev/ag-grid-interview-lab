@@ -1,4 +1,5 @@
 import type { GridState } from 'ag-grid-community';
+import type { FilterSchema } from './filterSchema';
 const sections = [
   'version',
   'columnOrder',
@@ -25,12 +26,16 @@ const finite = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v);
 
 // Reconstruct supported fields. The UI uses the default maxNumConditions=2.
+// `expected` pins the filter type to the column's configured filter; conditions
+// of a combined filter already have to share the top-level type.
 function filter(
   v: unknown,
   child = false,
+  expected?: string,
 ): Record<string, unknown> | undefined {
   if (!object(v) || !['text', 'number', 'date'].includes(String(v.filterType)))
     return;
+  if (expected && v.filterType !== expected) return;
   const filterType = v.filterType;
   if ('operator' in v || 'conditions' in v) {
     if (
@@ -111,7 +116,15 @@ export function serializeState(state: GridState): string {
     ),
   );
 }
-export function deserializeState(text: string | null): GridState | undefined {
+/**
+ * Rebuild only the sections and shapes this application restores. With a
+ * `schema` (column id → configured filter type), a filter for an unknown column
+ * or of another type is dropped so the grid never receives an impossible model.
+ */
+export function deserializeState(
+  text: string | null,
+  schema?: FilterSchema,
+): GridState | undefined {
   try {
     if (!text || text.length > 50000) return;
     const v: unknown = JSON.parse(text);
@@ -189,7 +202,12 @@ export function deserializeState(text: string | null): GridState | undefined {
     ) {
       const entries = Object.entries(v.filter.filterModel).flatMap(
         ([key, value]) => {
-          const validated = id(key) ? filter(value) : undefined;
+          const expected =
+            schema && Object.hasOwn(schema, key) ? schema[key] : undefined;
+          const validated =
+            id(key) && (!schema || expected)
+              ? filter(value, false, expected)
+              : undefined;
           return validated ? [[key, validated]] : [];
         },
       );
@@ -206,9 +224,10 @@ export function deserializeState(text: string | null): GridState | undefined {
 export function readState(
   key: string,
   storage?: Storage,
+  schema?: FilterSchema,
 ): GridState | undefined {
   try {
-    return deserializeState((storage ?? localStorage).getItem(key));
+    return deserializeState((storage ?? localStorage).getItem(key), schema);
   } catch {
     return undefined;
   }
