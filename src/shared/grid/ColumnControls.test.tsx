@@ -3,11 +3,18 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GridApi } from 'ag-grid-community';
 import { ColumnControls } from './ColumnControls';
 
-/** A grid stub that owns visibility and notifies listeners the way AG Grid does. */
-function fakeGrid(ids: string[]) {
+/**
+ * A grid stub that owns visibility and notifies listeners the way AG Grid does.
+ * AG Grid 36.1 registers `api.addEventListener` listeners as asynchronous
+ * (`ApiEventService`: only gridPreDestroyed/fillStart/pasteStart are sync), so
+ * `async` delivers events on a later task, after the click handler has returned.
+ */
+function fakeGrid(ids: string[], { async = false } = {}) {
   const visible = new Map(ids.map((id) => [id, true]));
   const listeners = new Map<string, Set<() => void>>();
-  const emit = (type: string) => listeners.get(type)?.forEach((fn) => fn());
+  const deliver = (type: string) => listeners.get(type)?.forEach((fn) => fn());
+  const emit = (type: string) =>
+    async ? setTimeout(() => deliver(type), 0) : deliver(type);
   let destroyed = false;
   const api = {
     isDestroyed: () => destroyed,
@@ -53,6 +60,29 @@ describe('column controls', () => {
     expect((screen.getByLabelText('COUNT') as HTMLInputElement).checked).toBe(
       true,
     );
+  });
+
+  it('shows the grid visibility right after a click, before the asynchronous grid event arrives', () => {
+    vi.useFakeTimers();
+    try {
+      const { api, raw } = fakeGrid(['avg'], { async: true });
+      render(<ColumnControls api={api} />);
+      const average = screen.getByLabelText('AVG') as HTMLInputElement;
+
+      fireEvent.click(average);
+      expect(raw.setColumnsVisible).toHaveBeenLastCalledWith(['avg'], false);
+      // The grid already hid the column; the checkbox must not show the stale value.
+      expect(average.checked).toBe(false);
+      act(() => vi.runAllTimers());
+      expect(average.checked).toBe(false);
+
+      fireEvent.click(average);
+      expect(average.checked).toBe(true);
+      act(() => vi.runAllTimers());
+      expect(average.checked).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('subscribes once per grid and removes its listener on unmount', () => {
