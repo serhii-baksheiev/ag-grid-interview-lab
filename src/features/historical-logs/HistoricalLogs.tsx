@@ -8,6 +8,7 @@ import {
   statusRenderer,
   gridTheme,
 } from '../../shared/grid/base';
+import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { formatNumber, formatTimestamp } from '../../shared/utils/format';
@@ -18,6 +19,47 @@ const initialStatus: DatasourceStatus = {
   error: false,
   requests: [],
 };
+// A column-level filterParams replaces the default object, so share the base.
+const filterParams = {
+  debounceMs: 350,
+  maxNumConditions: 2,
+  inRangeInclusive: true,
+};
+const columns: ColDef<Telemetry>[] = [
+  {
+    field: 'timestamp',
+    headerName: 'Timestamp · UTC',
+    width: 205,
+    pinned: 'left',
+    valueFormatter: (p) => formatTimestamp(p.value as string | undefined),
+    // Filter what is displayed: a date-time picker, read as UTC by the mock query.
+    // The floating filter syncs its date into the main filter by the column's
+    // data type, not by filterParams, so both must say "with time".
+    cellDataType: 'dateTimeString',
+    filter: 'agDateColumnFilter',
+    filterParams: { ...filterParams, includeTime: true },
+  },
+  { field: 'deviceId', headerName: 'Device', width: 160 },
+  { field: 'location', width: 165 },
+  { field: 'type', headerName: 'Sensor type', width: 150 },
+  {
+    field: 'value',
+    width: 115,
+    filter: 'agNumberColumnFilter',
+    valueFormatter: (p) => formatNumber(p.value as number | undefined),
+    cellClass: 'numeric-cell',
+  },
+  { field: 'unit', width: 110, filter: false, sortable: false },
+  { field: 'status', width: 130, cellRenderer: statusRenderer },
+  {
+    field: 'quality',
+    headerName: 'Quality %',
+    width: 120,
+    filter: 'agNumberColumnFilter',
+  },
+  { field: 'message', headerName: 'Diagnostic', width: 225 },
+];
+const filterSchema = filterSchemaFor(columns, defaultColDef);
 export default function HistoricalLogs() {
   const [total, setTotal] = useState(100000);
   const [latency, setLatency] = useState(250);
@@ -36,48 +78,12 @@ export default function HistoricalLogs() {
   const filterTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
-  const state = useGridState('history');
-  const columns = useMemo<ColDef<Telemetry>[]>(
-    () => [
-      {
-        field: 'timestamp',
-        headerName: 'Timestamp · UTC',
-        width: 205,
-        pinned: 'left',
-        valueFormatter: (p) => formatTimestamp(p.value as string | undefined),
-        filter: 'agTextColumnFilter',
-      },
-      { field: 'deviceId', headerName: 'Device', width: 160 },
-      { field: 'location', width: 165 },
-      { field: 'type', headerName: 'Sensor type', width: 150 },
-      {
-        field: 'value',
-        width: 115,
-        filter: 'agNumberColumnFilter',
-        valueFormatter: (p) => formatNumber(p.value as number | undefined),
-        cellClass: 'numeric-cell',
-      },
-      { field: 'unit', width: 110, filter: false, sortable: false },
-      { field: 'status', width: 130, cellRenderer: statusRenderer },
-      {
-        field: 'quality',
-        headerName: 'Quality %',
-        width: 120,
-        filter: 'agNumberColumnFilter',
-      },
-      { field: 'message', headerName: 'Diagnostic', width: 225 },
-    ],
-    [],
-  );
+  const state = useGridState('history', filterSchema);
   const defaults = useMemo<ColDef<Telemetry>>(
     () => ({
       ...defaultColDef,
       floatingFilter: true,
-      filterParams: {
-        debounceMs: 350,
-        maxNumConditions: 2,
-        inRangeInclusive: true,
-      },
+      filterParams,
     }),
     [],
   );
@@ -318,7 +324,7 @@ export default function HistoricalLogs() {
           {status.requests.map((request) => (
             <li key={request.id}>
               <code>
-                #{request.id} [{request.range})
+                #{request.id} {request.range}
               </code>{' '}
               · {request.status}
               {request.duration !== undefined && ` · ${request.duration} ms`}

@@ -11,6 +11,7 @@ import type { Device } from '../../shared/types';
 import { generateDevices } from '../../shared/data/generator';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { ConfigurationToolbar } from './ConfigurationToolbar';
+import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { configurationColumns } from './columns';
@@ -38,7 +39,12 @@ export default function DeviceConfiguration() {
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const nextId = useRef(101);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const gridState = useGridState('configuration');
+  const columnDefs = useMemo(() => configurationColumns(), []);
+  const filterSchema = useMemo(
+    () => filterSchemaFor(columnDefs, defaultColDef),
+    [columnDefs],
+  );
+  const gridState = useGridState('configuration', filterSchema);
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const setValue = useCallback((params: ValueSetterParams<Device, unknown>) => {
@@ -59,7 +65,6 @@ export default function DeviceConfiguration() {
     setSaveError(false);
     return true;
   }, []);
-  const columnDefs = useMemo(() => configurationColumns(), []);
   const defaults = useMemo<ColDef<Device>>(
     () => ({
       ...defaultColDef,
@@ -297,6 +302,9 @@ export default function DeviceConfiguration() {
           getRowId={getRowId}
           rowSelection={rowSelection}
           rowClassRules={rowClassRules}
+          // An editor reporting validation errors (NameEditor) keeps its editor
+          // open on commit; the grid marks it invalid and announces the error.
+          invalidEditValueMode="block"
           undoRedoCellEditing
           undoRedoCellEditingLimit={30}
           stopEditingWhenCellsLoseFocus

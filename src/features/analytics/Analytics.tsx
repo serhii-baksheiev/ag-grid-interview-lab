@@ -4,6 +4,7 @@ import type { ColDef, GridApi } from 'ag-grid-community';
 import { telemetryAt } from '../../shared/data/generator';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { ColumnControls } from '../../shared/grid/ColumnControls';
+import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { formatNumber } from '../../shared/utils/format';
@@ -29,6 +30,7 @@ const columns: ColDef<Summary>[] = [
     width: 135,
   },
 ];
+const filterSchema = filterSchemaFor(columns, defaultColDef);
 export default function Analytics() {
   const [api, setApi] = useState<GridApi<Summary>>();
   const [message, setMessage] = useState('');
@@ -36,7 +38,7 @@ export default function Analytics() {
     () => summarize(Array.from({ length: 10000 }, (_, i) => telemetryAt(i))),
     [],
   );
-  const state = useGridState('analytics');
+  const state = useGridState('analytics', filterSchema);
   const locations = useMemo(
     () =>
       [...new Set(rows.map((row) => row.location))].map((location) => {

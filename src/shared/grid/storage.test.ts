@@ -217,3 +217,147 @@ describe('persisted grid state', () => {
     expect(readState('test-grid', unavailable)).toBeUndefined();
   });
 });
+
+describe('persisted filter models against a column filter schema', () => {
+  const schema = {
+    deviceId: 'text',
+    value: 'number',
+    timestamp: 'date',
+  } as const;
+  const stored = (filterModel: Record<string, unknown>) =>
+    JSON.stringify({ version: '36.1.0', filter: { filterModel } });
+
+  it('drops a filter for a column the grid does not have', () => {
+    expect(
+      deserializeState(
+        stored({
+          deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+          ghost: { filterType: 'text', type: 'contains', filter: 'x' },
+        }),
+        schema,
+      ),
+    ).toEqual({
+      version: '36.1.0',
+      filter: {
+        filterModel: {
+          deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+        },
+      },
+    });
+  });
+
+  it('drops a well-formed filter whose type does not match the column', () => {
+    expect(
+      deserializeState(
+        stored({
+          timestamp: { filterType: 'text', type: 'contains', filter: '2026' },
+          value: { filterType: 'text', type: 'contains', filter: '4' },
+          deviceId: { filterType: 'number', type: 'equals', filter: 4 },
+        }),
+        schema,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps valid siblings when a mismatched filter is dropped', () => {
+    const value = { filterType: 'number', type: 'greaterThan', filter: 40 };
+    const timestamp = {
+      filterType: 'date',
+      type: 'inRange',
+      dateFrom: '2026-09-01 12:00:00',
+      dateTo: '2026-09-01 12:10:00',
+    };
+    expect(
+      deserializeState(
+        stored({
+          value,
+          timestamp,
+          deviceId: {
+            filterType: 'date',
+            type: 'equals',
+            dateFrom: '2026-09-01',
+          },
+        }),
+        schema,
+      ),
+    ).toEqual({
+      version: '36.1.0',
+      filter: { filterModel: { value, timestamp } },
+    });
+  });
+
+  it('applies the schema to every condition of a combined filter', () => {
+    expect(
+      deserializeState(
+        stored({
+          value: {
+            filterType: 'number',
+            operator: 'AND',
+            conditions: [
+              { filterType: 'number', type: 'greaterThan', filter: 1 },
+              { filterType: 'number', type: 'lessThan', filter: 9 },
+            ],
+          },
+          deviceId: {
+            filterType: 'number',
+            operator: 'AND',
+            conditions: [
+              { filterType: 'number', type: 'greaterThan', filter: 1 },
+              { filterType: 'number', type: 'lessThan', filter: 9 },
+            ],
+          },
+        }),
+        schema,
+      ),
+    ).toEqual({
+      version: '36.1.0',
+      filter: {
+        filterModel: {
+          value: {
+            filterType: 'number',
+            operator: 'AND',
+            conditions: [
+              { filterType: 'number', type: 'greaterThan', filter: 1 },
+              { filterType: 'number', type: 'lessThan', filter: 9 },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it('reads a stored view through the schema', () => {
+    localStorage.setItem(
+      'schema-grid',
+      stored({
+        value: { filterType: 'text', type: 'contains', filter: 'x' },
+        deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+      }),
+    );
+    expect(readState('schema-grid', undefined, schema)).toEqual({
+      version: '36.1.0',
+      filter: {
+        filterModel: {
+          deviceId: { filterType: 'text', type: 'contains', filter: 'dev' },
+        },
+      },
+    });
+  });
+
+  it('still shape-validates without a schema', () => {
+    expect(
+      deserializeState(
+        stored({
+          anything: { filterType: 'number', type: 'equals', filter: 1 },
+        }),
+      ),
+    ).toEqual({
+      version: '36.1.0',
+      filter: {
+        filterModel: {
+          anything: { filterType: 'number', type: 'equals', filter: 1 },
+        },
+      },
+    });
+  });
+});

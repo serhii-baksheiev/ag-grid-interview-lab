@@ -170,3 +170,117 @@ describe('historical range queries', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
+
+describe('historical date filters', () => {
+  const base = {
+    total: 120,
+    startRow: 0,
+    endRow: 120,
+    filterModel: {},
+    sortModel: [],
+  };
+  const all = Array.from({ length: 120 }, (_, i) => telemetryAt(i));
+  const at = (offset: number) => telemetryAt(offset).timestamp;
+  const naive = (iso: string) => iso.slice(0, 19).replace('T', ' ');
+
+  it('treats the naive filter value as UTC, the zone the column displays', async () => {
+    const result = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          type: 'equals',
+          dateFrom: '2026-09-01 12:00:05',
+        },
+      },
+    });
+    expect(result.rows).toEqual([telemetryAt(5)]);
+    expect(result.total).toBe(1);
+  });
+
+  it('applies greaterThan, lessThanOrEqual and notEqual at second precision', async () => {
+    const after = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          type: 'greaterThan',
+          dateFrom: naive(at(100)),
+        },
+      },
+    });
+    expect(after.rows).toEqual(all.slice(101));
+    const upTo = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          type: 'lessThanOrEqual',
+          dateFrom: naive(at(3)),
+        },
+      },
+    });
+    expect(upTo.rows).toEqual(all.slice(0, 4));
+    const except = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          type: 'notEqual',
+          dateFrom: naive(at(0)),
+        },
+      },
+    });
+    expect(except.total).toBe(119);
+  });
+
+  it('filters an inclusive range before slicing a page', async () => {
+    const result = await queryHistory({
+      ...base,
+      startRow: 2,
+      endRow: 4,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          type: 'inRange',
+          dateFrom: naive(at(10)),
+          dateTo: naive(at(19)),
+        },
+      },
+    });
+    expect(result.total).toBe(10);
+    expect(result.rows).toEqual(all.slice(12, 14));
+  });
+
+  it('supports blank checks and combined date conditions', async () => {
+    const blank = await queryHistory({
+      ...base,
+      filterModel: { timestamp: { filterType: 'date', type: 'blank' } },
+    });
+    expect(blank.total).toBe(0);
+    const combined = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: {
+          filterType: 'date',
+          operator: 'OR',
+          conditions: [
+            { filterType: 'date', type: 'equals', dateFrom: naive(at(1)) },
+            { filterType: 'date', type: 'equals', dateFrom: naive(at(7)) },
+          ],
+        },
+      },
+    });
+    expect(combined.rows).toEqual([telemetryAt(1), telemetryAt(7)]);
+  });
+
+  it('matches nothing for an unparseable date value', async () => {
+    const result = await queryHistory({
+      ...base,
+      filterModel: {
+        timestamp: { filterType: 'date', type: 'equals', dateFrom: 'soon' },
+      },
+    });
+    expect(result.total).toBe(0);
+  });
+});
