@@ -31,6 +31,6 @@ export function failOnBrowserErrors(
   });
 }
 
-export function isGridWarning(text: string): boolean {
+function isGridWarning(text: string): boolean {
   return /^AG Grid:/.test(text);
 }

@@ -305,6 +305,15 @@ for (const invalid of [' ', '   '])
       page.getByText('0 unsaved changes', { exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);
+    // Clicking away does not commit or discard either: block mode holds the editor.
+    await page
+      .getByRole('gridcell', { name: generateDevices(2)[1]!.name, exact: true })
+      .click();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue(invalid);
+    await expect(
+      page.getByText('0 unsaved changes', { exact: true }),
+    ).toBeVisible();
 
     await editor.fill('Corrected sensor');
     await expect(editor).toHaveAttribute('aria-invalid', 'false');
