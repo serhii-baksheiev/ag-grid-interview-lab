@@ -1,5 +1,5 @@
 {
   "baselineGzipBytes": 358171,
   "tolerance": 0.05,
-  "recordedFrom": "npm run build of main at 85b046b (Vite 8.3.0), zlib gzip at the default level"
+  "recordedFrom": "npm run build of main at 85b046b (Vite 8.3.0), zlib gzip at the default level; the same figure under Node 24.18.0 on Windows and Node 22 on the CI Ubuntu runner"
 }

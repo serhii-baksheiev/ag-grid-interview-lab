@@ -141,10 +141,39 @@ describe('.github/workflows/ci.yml', () => {
     expect(artifactMatch?.[1].trim()).not.toBe('playwright-failure');
   });
 
+  it('runs the bundle budget as an active step that cannot be skipped or allowed to fail', () => {
+    const qualityJob = findJobByName(jobs, 'Quality');
+    // A real step line, not a comment mentioning the command.
+    expect(qualityJob).toMatch(/^\s+- run: npm run check:bundle\s*$/m);
+    expect(ciYaml).not.toMatch(/continue-on-error/);
+    // The only condition in the workflow uploads artifacts after a failure.
+    const conditions = ciYaml.match(/^\s+if:.*$/gm) ?? [];
+    expect(conditions.map((line) => line.trim())).toEqual(
+      conditions.map(() => 'if: failure()'),
+    );
+  });
+
+  it('builds before running the Firefox suite', () => {
+    const firefoxJob = findJobByName(jobs, 'E2E Firefox')!;
+    const buildIndex = firefoxJob.indexOf('npm run build');
+    expect(buildIndex).toBeGreaterThan(-1);
+    expect(buildIndex).toBeLessThan(firefoxJob.indexOf('--project=firefox'));
+  });
+
   it('never raises a timeout, sets chunkSizeWarningLimit, or passes --retries anywhere in the workflow', () => {
     expect(ciYaml).not.toMatch(/chunkSizeWarningLimit/);
     expect(ciYaml).not.toMatch(/--retries/);
     expect(ciYaml).not.toMatch(/--timeout/);
+  });
+});
+
+describe('E2E suite', () => {
+  it('records main-thread timing without gating on it, because wall-clock depends on the runner', () => {
+    const spec = readRepoFile('e2e/remediation.spec.ts');
+    expect(spec).not.toMatch(
+      /expect\(\s*sample\.(longestTaskMs|maxTimerDriftMs)/,
+    );
+    expect(spec).toMatch(/annotations\.push\(/);
   });
 });
 
