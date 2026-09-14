@@ -60,6 +60,104 @@ describe('deterministic IoT data', () => {
   });
 });
 
+describe('output pinned before the field primitives were extracted', () => {
+  // Captured from d8032cd, where telemetryAt and generateDevices built every field inline.
+  it('reproduces historical records exactly', () => {
+    expect(telemetryAt(0)).toEqual({
+      id: 'log-0',
+      deviceId: 'device-00001',
+      timestamp: '2026-09-01T12:00:00.000Z',
+      location: 'North plant',
+      type: 'temperature',
+      value: 44.96,
+      unit: '°C',
+      status: 'critical',
+      quality: 90,
+      message: 'THRESHOLD_EXCEEDED',
+    });
+    expect(telemetryAt(1000)).toEqual({
+      id: 'log-1000',
+      deviceId: 'device-00001',
+      timestamp: '2026-09-01T12:16:40.000Z',
+      location: 'North plant',
+      type: 'temperature',
+      value: 35.89,
+      unit: '°C',
+      status: 'warning',
+      quality: 95,
+    });
+    expect(telemetryAt(123_457)).toEqual({
+      id: 'log-123457',
+      deviceId: 'device-00458',
+      timestamp: '2026-09-02T22:17:37.000Z',
+      location: 'North plant',
+      type: 'humidity',
+      value: 76.97,
+      unit: '% RH',
+      status: 'warning',
+      quality: 92,
+    });
+    expect(telemetryAt(499_999)).toEqual({
+      id: 'log-499999',
+      deviceId: 'device-01000',
+      timestamp: '2026-09-07T06:53:19.000Z',
+      location: 'Assembly line',
+      type: 'vibration',
+      value: 1.06,
+      unit: 'mm/s',
+      status: 'normal',
+      quality: 95,
+    });
+    expect(telemetryAt(4096, 7)).toMatchObject({
+      deviceId: 'device-00097',
+      value: 20.17,
+      status: 'normal',
+      quality: 99,
+    });
+  });
+  it('reproduces devices and live readings exactly', () => {
+    expect(generateDevices(2)).toEqual([
+      {
+        id: 'device-00001',
+        name: 'Temperature 0001',
+        type: 'temperature',
+        location: 'North plant',
+        status: 'critical',
+        enabled: true,
+        unit: '°C',
+        samplingInterval: 27,
+        warningThreshold: 35,
+        criticalThreshold: 42,
+        lastSeen: '2026-09-01T12:00:00.000Z',
+      },
+      {
+        id: 'device-00002',
+        name: 'Humidity 0002',
+        type: 'humidity',
+        location: 'North plant',
+        status: 'normal',
+        enabled: true,
+        unit: '% RH',
+        samplingInterval: 19,
+        warningThreshold: 65,
+        criticalThreshold: 78,
+        lastSeen: '2026-09-01T12:00:00.000Z',
+      },
+    ]);
+    expect(
+      generateLiveDevices(2).map(({ id, value, quality, status }) => ({
+        id,
+        value,
+        quality,
+        status,
+      })),
+    ).toEqual([
+      { id: 'device-00001', value: 44.96, quality: 90, status: 'critical' },
+      { id: 'device-00002', value: 60.36, quality: 91, status: 'normal' },
+    ]);
+  });
+});
+
 describe('index-native field primitives', () => {
   const spreadIndices = [
     ...Array.from({ length: 2001 }, (_, i) => i), // 0..2000

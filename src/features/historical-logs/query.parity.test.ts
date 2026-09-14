@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as generatorModule from '../../shared/data/generator';
 import { telemetryAt } from '../../shared/data/generator';
 import { referenceIndices } from '../../test/historyReference';
+import { deserializeState } from '../../shared/grid/storage';
 import {
   historyPage,
+  MERGE_CHUNK_OUTPUTS,
   prepareHistory,
+  QUERY_CHUNK_ROWS,
   UnsupportedQueryError,
   type HistoryIndex,
   type HistoryQuery,
@@ -665,11 +668,16 @@ function randomQuery(rng: () => number): HistoryQuery {
     const first = randomFilterLeaf(rng, column, total);
     if (rng() < 0.3) {
       const second = randomFilterLeaf(rng, column, total);
-      filterModel[column] = {
-        filterType: first.filterType,
-        operator: rng() < 0.5 ? 'AND' : 'OR',
-        conditions: [first, second],
-      };
+      const operator = rng() < 0.5 ? 'AND' : 'OR';
+      // AG Grid combines conditions of one filter type only.
+      filterModel[column] =
+        second.filterType === first.filterType
+          ? {
+              filterType: first.filterType,
+              operator,
+              conditions: [first, second],
+            }
+          : first;
     } else {
       filterModel[column] = first;
     }
@@ -686,26 +694,96 @@ function randomQuery(rng: () => number): HistoryQuery {
 }
 
 describe('seeded property parity', () => {
-  it('matches the reference oracle for 400 random queries', async () => {
-    const rng = mulberry32(0xc0ffee);
-    for (let i = 0; i < 400; i++) {
-      const query = randomQuery(rng);
-      const index = await prepareHistory(query);
-      const expected = referenceIndices({
-        total: query.total,
-        filterModel: query.filterModel,
-        sortModel: query.sortModel,
-      });
-      try {
-        expect(order(index)).toEqual(expected);
-      } catch (error) {
-        throw new Error(
-          `${(error as Error).message}\nquery=${JSON.stringify(query)}`,
-          { cause: error },
-        );
+  // Four independently seeded batches of 100 queries, each within the default timeout.
+  it.each([0, 1, 2, 3])(
+    'matches the reference oracle for 100 random queries (seed batch %i)',
+    async (batch) => {
+      const rng = mulberry32(0xc0ffee + batch);
+      for (let i = 0; i < 100; i++) {
+        const query = randomQuery(rng);
+        const index = await prepareHistory(query);
+        const expected = referenceIndices({
+          total: query.total,
+          filterModel: query.filterModel,
+          sortModel: query.sortModel,
+        });
+        try {
+          expect(order(index)).toEqual(expected);
+        } catch (error) {
+          throw new Error(
+            `${(error as Error).message}\nquery=${JSON.stringify(query)}`,
+            { cause: error },
+          );
+        }
       }
-    }
-  }, 20_000);
+    },
+  );
+});
+
+describe('parity across scan chunks and resumed merge passes', () => {
+  const cases: [
+    string,
+    number,
+    Record<string, unknown>,
+    HistoryQuery['sortModel'],
+  ][] = [
+    [
+      'value asc, merge passes resumed mid-pass',
+      131_073,
+      {},
+      [{ colId: 'value', sort: 'asc' }],
+    ],
+    [
+      'type filter across scan chunks, quality desc then deviceId asc',
+      131_073,
+      { type: { filterType: 'text', type: 'notEqual', filter: 'battery' } },
+      [
+        { colId: 'quality', sort: 'desc' },
+        { colId: 'deviceId', sort: 'asc' },
+      ],
+    ],
+    [
+      'status asc with descending timestamp ties',
+      65_537,
+      {},
+      [
+        { colId: 'status', sort: 'asc' },
+        { colId: 'timestamp', sort: 'desc' },
+      ],
+    ],
+    [
+      'timestamp range narrowing a value filter, location desc then value asc',
+      200_003,
+      {
+        timestamp: {
+          filterType: 'date',
+          type: 'inRange',
+          dateFrom: naive(3),
+          dateTo: naive(190_001),
+        },
+        value: { filterType: 'number', type: 'greaterThan', filter: 30 },
+      },
+      [
+        { colId: 'location', sort: 'desc' },
+        { colId: 'value', sort: 'asc' },
+      ],
+    ],
+    [
+      'message notBlank across scan chunks, unsorted',
+      40_961,
+      { message: { filterType: 'text', type: 'notBlank' } },
+      [],
+    ],
+  ];
+  it.each(cases)('%s', async (_, total, filterModel, sortModel) => {
+    const index = await expectParity({ filterModel, sortModel }, total);
+    // Each case must really cross the boundaries it names.
+    expect(index.stats.filtered + index.stats.keyed).toBeGreaterThan(
+      QUERY_CHUNK_ROWS,
+    );
+    if (index.stats.keyed)
+      expect(index.stats.keyed).toBeGreaterThan(MERGE_CHUNK_OUTPUTS);
+  });
 });
 
 // --- unsupported query models fail closed (AGL-8d) -------------------------
@@ -760,6 +838,93 @@ describe('unsupported query models fail closed instead of silently matching', ()
   it.each([42, 'x', []])(
     'rejects a non-object filter model value (%j)',
     (value) => expectUnsupported({ value }),
+  );
+  it.each([
+    [
+      'a combined model with no conditions',
+      'value',
+      { filterType: 'number', operator: 'AND', conditions: [] },
+    ],
+    [
+      'a combined model with three conditions',
+      'value',
+      {
+        filterType: 'number',
+        operator: 'OR',
+        conditions: [1, 2, 3].map((filter) => ({
+          filterType: 'number',
+          type: 'equals',
+          filter,
+        })),
+      },
+    ],
+    [
+      'a nested combined model',
+      'status',
+      {
+        filterType: 'text',
+        operator: 'AND',
+        conditions: [
+          {
+            filterType: 'text',
+            operator: 'OR',
+            conditions: [
+              { filterType: 'text', type: 'equals', filter: 'warning' },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      'a combined model whose conditions differ in filter type',
+      'value',
+      {
+        filterType: 'number',
+        operator: 'OR',
+        conditions: [
+          { filterType: 'number', type: 'equals', filter: 1 },
+          { filterType: 'text', type: 'contains', filter: '1' },
+        ],
+      },
+    ],
+    ['a blank check without a filter type', 'message', { type: 'blank' }],
+    [
+      'a text filter without a value',
+      'deviceId',
+      { filterType: 'text', type: 'contains' },
+    ],
+    [
+      'a text filter with a numeric value',
+      'deviceId',
+      { filterType: 'text', type: 'equals', filter: 42 },
+    ],
+    [
+      'a number filter with a string value',
+      'value',
+      { filterType: 'number', type: 'equals', filter: '40' },
+    ],
+    [
+      'a number range without an upper bound',
+      'value',
+      { filterType: 'number', type: 'inRange', filter: 1 },
+    ],
+    [
+      'a date filter without a date',
+      'timestamp',
+      { filterType: 'date', type: 'equals' },
+    ],
+    [
+      'a date range without an end',
+      'timestamp',
+      { filterType: 'date', type: 'inRange', dateFrom: naive(1) },
+    ],
+    [
+      'a boolean-column text type',
+      'status',
+      { filterType: 'text', type: 'true' },
+    ],
+  ] as const)('rejects %s', (_, column, model) =>
+    expectUnsupported({ [column]: model }),
   );
   it('rejects a sort on an unknown column', () =>
     expectUnsupported({}, [{ colId: 'ghost', sort: 'asc' }]));
@@ -1136,18 +1301,44 @@ describe('sort key and merge-pass accounting', () => {
   });
 });
 
-describe('cooperative yield bound', () => {
-  it('bounds yields for a 500000-row value sort by the structural formula', async () => {
+describe('cooperative yield points', () => {
+  const dueEveryCheck = () => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => (now += 100));
+  };
+  const sortYields = (total: number) =>
+    Math.ceil(total / QUERY_CHUNK_ROWS) +
+    Math.ceil(Math.log2(total)) * (Math.ceil(total / MERGE_CHUNK_OUTPUTS) - 1);
+
+  it('yields at every key chunk and between merge chunks when each budget check is due', async () => {
+    dueEveryCheck();
+    const total = 100_000;
+    const index = await prepareHistory(
+      makeQuery({ sortModel: [{ colId: 'value', sort: 'asc' }] }, total),
+    );
+    expect(index.stats.yields).toBe(sortYields(total));
+  });
+  it('yields at every scan chunk of a filter when each budget check is due', async () => {
+    dueEveryCheck();
+    const total = 50_000;
+    const index = await prepareHistory(
+      makeQuery(
+        {
+          filterModel: {
+            type: { filterType: 'text', type: 'equals', filter: 'humidity' },
+          },
+        },
+        total,
+      ),
+    );
+    expect(index.stats.yields).toBe(Math.ceil(total / QUERY_CHUNK_ROWS));
+  });
+  it('never yields more often than its chunk boundaries on a real clock', async () => {
     const total = 500_000;
     const index = await prepareHistory(
       makeQuery({ sortModel: [{ colId: 'value', sort: 'asc' }] }, total),
     );
-    const bound =
-      Math.ceil(index.stats.keyed / 256) +
-      Math.ceil((index.stats.keyed * index.stats.mergePasses) / 1024) +
-      index.stats.mergePasses +
-      2;
-    expect(index.stats.yields).toBeLessThanOrEqual(bound);
+    expect(index.stats.yields).toBeLessThanOrEqual(sortYields(total));
   });
 });
 
@@ -1234,5 +1425,119 @@ describe('cancellation', () => {
       channel.port2.postMessage(null);
     });
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+// --- one filter grammar ------------------------------------------------------
+
+describe('grid-state restoration never hands the engine a filter it rejects', () => {
+  // The Historical Logs filter schema: column id -> the filter each column uses.
+  const schema = {
+    timestamp: 'date',
+    deviceId: 'text',
+    location: 'text',
+    type: 'text',
+    value: 'number',
+    status: 'text',
+    quality: 'number',
+    message: 'text',
+  } as const;
+  const comparisons = [
+    'equals',
+    'notEqual',
+    'lessThan',
+    'lessThanOrEqual',
+    'greaterThan',
+    'greaterThanOrEqual',
+  ];
+  const leaves: Record<'text' | 'number' | 'date', unknown[]> = {
+    text: [
+      ...[
+        'equals',
+        'notEqual',
+        'contains',
+        'notContains',
+        'startsWith',
+        'endsWith',
+      ].map((type) => ({ filterType: 'text', type, filter: 'war' })),
+      { filterType: 'text', type: 'contains' },
+      { filterType: 'text', type: 'contains', filter: 7 },
+      { filterType: 'text', type: 'regex', filter: 'x' },
+    ],
+    number: [
+      ...comparisons.map((type) => ({
+        filterType: 'number',
+        type,
+        filter: 40,
+      })),
+      { filterType: 'number', type: 'inRange', filter: 10, filterTo: 40 },
+      { filterType: 'number', type: 'inRange', filter: 10 },
+      { filterType: 'number', type: 'equals', filter: '40' },
+    ],
+    date: [
+      ...comparisons.map((type) => ({
+        filterType: 'date',
+        type,
+        dateFrom: naive(5),
+        dateTo: null,
+      })),
+      {
+        filterType: 'date',
+        type: 'inRange',
+        dateFrom: naive(5),
+        dateTo: naive(50),
+      },
+      { filterType: 'date', type: 'inRange', dateFrom: naive(5) },
+      { filterType: 'date', type: 'equals', dateFrom: '2026-09-01T12:00:05' },
+      { filterType: 'date', type: 'equals' },
+    ],
+  };
+  const candidates = Object.entries(schema).flatMap(([column, filterType]) => {
+    const own = leaves[filterType];
+    const blanks = ['blank', 'notBlank'].map((type) => ({ filterType, type }));
+    const combined = ['AND', 'OR'].flatMap((operator) => [
+      { filterType, operator, conditions: [own[0], own[1]] },
+      { filterType, operator, conditions: [own[0]] },
+      { filterType, operator, conditions: [] },
+      { filterType, operator, conditions: [own[0], own[1], own[2]] },
+    ]);
+    const booleans = ['true', 'false'].map((type) => ({
+      filterType: 'text',
+      type,
+    }));
+    return [...own, ...blanks, ...combined, ...booleans].map(
+      (model) => [column, model] as const,
+    );
+  });
+
+  it('executes every model restoration keeps, apart from boolean-column text types', async () => {
+    let restorable = 0;
+    const rejected: string[] = [];
+    for (const [column, model] of candidates) {
+      const restored = deserializeState(
+        JSON.stringify({
+          version: '36.1.0',
+          filter: { filterModel: { [column]: model } },
+        }),
+        schema,
+      )?.filter?.filterModel?.[column];
+      if (!restored) continue;
+      restorable++;
+      const accepted = await prepareHistory(
+        makeQuery({ filterModel: { [column]: restored } }, 50),
+      ).then(
+        () => true,
+        (error: Error) => error.name !== 'UnsupportedQueryError',
+      );
+      if (!accepted) rejected.push(`${column}: ${JSON.stringify(restored)}`);
+    }
+    // Not vacuous: the well-formed models survive restoration.
+    expect(restorable).toBeGreaterThan(100);
+    // Grid-state storage accepts 'true'/'false' on any text column for the boolean
+    // Configuration filter. Historical Logs has no boolean column, so the engine
+    // rejects those explicitly instead of guessing; nothing else may differ.
+    expect(
+      rejected.filter((entry) => !/"type":"(true|false)"/.test(entry)),
+    ).toEqual([]);
   });
 });

@@ -65,9 +65,9 @@ const pause = () =>
   });
 const BUDGET_MS = 8;
 /** Rows scanned or keyed between budget checks. */
-const CHUNK = 1 << 14;
+export const QUERY_CHUNK_ROWS = 1 << 12;
 /** Merge outputs between budget checks. */
-const MERGE_CHUNK = 1 << 16;
+export const MERGE_CHUNK_OUTPUTS = 1 << 16;
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -173,13 +173,30 @@ function textPredicate(type: unknown, raw: unknown): Predicate<string> {
       throw new UnsupportedQueryError(`Unsupported text filter "${type}"`);
   }
 }
-function compile<T>(raw: unknown, view: View<T>): Predicate<T> {
+// The grammar is the one AG Grid's provided filters produce and grid-state
+// restoration accepts (storage.ts): a typed leaf, or one or two leaves of the
+// same filter type joined by AND/OR. Anything else is refused before any row is
+// read, so a malformed model can neither widen a result nor multiply the work.
+function compile<T>(
+  raw: unknown,
+  view: View<T>,
+  parentType?: unknown,
+): Predicate<T> {
   const model = record(raw);
   if (!model)
     throw new UnsupportedQueryError('A filter model must be an object');
+  const { filterType, type } = model;
+  if (filterType !== 'text' && filterType !== 'number' && filterType !== 'date')
+    throw new UnsupportedQueryError(`Unsupported filter type "${filterType}"`);
   if (Array.isArray(model.conditions)) {
+    if (parentType !== undefined)
+      throw new UnsupportedQueryError('Combined filters cannot be nested');
+    if (model.conditions.length < 1 || model.conditions.length > 2)
+      throw new UnsupportedQueryError(
+        'A combined filter has one or two conditions',
+      );
     const conditions = model.conditions.map((condition) =>
-      compile(condition, view),
+      compile(condition, view, filterType),
     );
     if (model.operator === 'OR')
       return (value) => conditions.some((condition) => condition(value));
@@ -187,33 +204,44 @@ function compile<T>(raw: unknown, view: View<T>): Predicate<T> {
       return (value) => conditions.every((condition) => condition(value));
     throw new UnsupportedQueryError(`Unsupported operator "${model.operator}"`);
   }
-  if (model.type === 'blank') return (value) => view.blank(value);
-  if (model.type === 'notBlank') return (value) => !view.blank(value);
-  if (model.filterType === 'number') {
-    const test = scalar(
-      model.type,
-      Number(model.filter),
-      Number(model.filterTo),
+  if (parentType !== undefined && filterType !== parentType)
+    throw new UnsupportedQueryError(
+      'Combined conditions share one filter type',
     );
+  if (type === 'blank') return (value) => view.blank(value);
+  if (type === 'notBlank') return (value) => !view.blank(value);
+  const inRange = type === 'inRange';
+  if (filterType === 'number') {
+    if (
+      typeof model.filter !== 'number' ||
+      (inRange && typeof model.filterTo !== 'number')
+    )
+      throw new UnsupportedQueryError('A number filter needs numeric values');
+    const test = scalar(type, model.filter, Number(model.filterTo));
     return (value) => test(view.number(value));
   }
-  if (model.filterType === 'date') {
-    const test = scalar(model.type, utcMs(model.dateFrom), utcMs(model.dateTo));
+  if (filterType === 'date') {
+    if (
+      typeof model.dateFrom !== 'string' ||
+      (inRange && typeof model.dateTo !== 'string')
+    )
+      throw new UnsupportedQueryError('A date filter needs date strings');
+    const test = scalar(type, utcMs(model.dateFrom), utcMs(model.dateTo));
     return (value) => test(view.date(value));
   }
-  if (model.filterType === 'text') {
-    const test = textPredicate(model.type, model.filter);
-    return (value) => test(String(view.text(value) ?? '').toLowerCase());
-  }
-  throw new UnsupportedQueryError(
-    `Unsupported filter type "${model.filterType}"`,
-  );
+  if (typeof model.filter !== 'string')
+    throw new UnsupportedQueryError('A text filter needs a text value');
+  const test = textPredicate(type, model.filter);
+  return (value) => test(String(view.text(value) ?? '').toLowerCase());
 }
 
 // --- Columns -----------------------------------------------------------------
 type Value = string | number | undefined;
 interface Column {
-  /** The record field's value, exactly as `telemetryAt(index)` holds it. */
+  /**
+   * The record field's value, exactly as `telemetryAt(index)` holds it — except
+   * `timestamp`, which is its epoch milliseconds (see `TIMESTAMP_MS`).
+   */
   value(index: number): Value;
   /**
    * A finite domain: `code(index)` indexes `domain`. Any predicate or sort rank
@@ -236,10 +264,7 @@ function coded(code: (index: number) => number, domain: readonly Value[]) {
 }
 // The Historical Logs grid columns. Anything else is not part of the query grammar.
 const columns = new Map<string, Column>([
-  [
-    'timestamp',
-    { value: (index) => new Date(timestampMsAt(index)).toISOString() },
-  ],
+  ['timestamp', { value: timestampMsAt }],
   [
     'deviceId',
     coded(
@@ -275,11 +300,11 @@ function column(colId: string): Column {
   return found;
 }
 function rowPredicate(colId: string, model: unknown): Predicate<number> {
+  const { value, code, domain } = column(colId);
   if (colId === 'timestamp') {
     const test = compile(model, TIMESTAMP_MS);
-    return (index) => test(timestampMsAt(index));
+    return (index) => test(value(index) as number);
   }
-  const { value, code, domain } = column(colId);
   const test = compile(model, RAW);
   if (code && domain) {
     const table = Uint8Array.from(domain, (entry) => (test(entry) ? 1 : 0));
@@ -335,7 +360,9 @@ function timestampRange(raw: unknown, total: number): [number, number] | null {
 // --- Sort keys ---------------------------------------------------------------
 // Every key is a Float64 so one comparator serves numbers and ranked strings and
 // a descending sort is a sign flip. String domains are ranked with the same `<`
-// comparison the grid contract uses, so equal strings share a rank.
+// comparison the grid contract uses, so equal strings share a rank. Keys compare
+// only with `<`, so values that are neither less nor greater (including NaN,
+// which no column produces today) tie exactly as they did before.
 function sortKey(colId: string): (index: number) => number {
   const { value, code, domain } = column(colId);
   if (!code || !domain) return value as (index: number) => number;
@@ -360,7 +387,7 @@ interface MergeCursor {
   target: number;
 }
 /**
- * Advance one bottom-up merge pass by at most `MERGE_CHUNK` outputs; true once the
+ * Advance one bottom-up merge pass by at most `MERGE_CHUNK_OUTPUTS` outputs; true once the
  * pass is complete. Positions travel with the primary key so the hot comparison
  * reads adjacent memory; secondary keys, indexed by position, only break ties.
  * Equal keys take the left run, which keeps the sort stable.
@@ -373,7 +400,7 @@ function mergeSome(
 ): boolean {
   const { from, to, fromKey, toKey, secondary } = runs;
   let { left, a, target } = cursor;
-  const stop = Math.min(target + MERGE_CHUNK, count);
+  const stop = Math.min(target + MERGE_CHUNK_OUTPUTS, count);
   while (target < stop) {
     const middle = Math.min(left + width, count),
       end = Math.min(left + width * 2, count),
@@ -385,16 +412,17 @@ function mergeSome(
       if (!takeLeft && a < middle) {
         const x = fromKey[a]!,
           y = fromKey[b]!;
-        takeLeft = x < y;
-        if (x === y) {
-          takeLeft = true;
+        // Take the right run only when it is strictly smaller; a tie keeps order.
+        takeLeft = !(y < x);
+        if (takeLeft && !(x < y)) {
           for (let s = 0; s < secondary.length; s++) {
             const u = secondary[s]![from[a]!]!,
               v = secondary[s]![from[b]!]!;
-            if (u !== v) {
-              takeLeft = u < v;
+            if (v < u) {
+              takeLeft = false;
               break;
             }
+            if (u < v) break;
           }
         }
       }
@@ -439,8 +467,8 @@ export async function prepareHistory(
     end: number,
     step: (from: number, to: number) => void,
   ) => {
-    for (let from = start; from < end; from += CHUNK) {
-      step(from, Math.min(from + CHUNK, end));
+    for (let from = start; from < end; from += QUERY_CHUNK_ROWS) {
+      step(from, Math.min(from + QUERY_CHUNK_ROWS, end));
       await breathe();
     }
   };

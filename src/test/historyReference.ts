@@ -7,9 +7,10 @@ export interface ReferenceQuery {
   sortModel: { colId: string; sort: string }[];
 }
 
-// --- everything below is a verbatim copy of today's `query.ts` predicate and
-// sort-key logic (see `git show HEAD:src/features/historical-logs/query.ts`),
-// applied to a fully materialised row instead of an index-native accessor.
+// --- everything below is a verbatim copy of the pre-index-native `query.ts`
+// predicate and sort-key logic (see
+// `git show d8032cd:src/features/historical-logs/query.ts`), applied to a fully
+// materialised row instead of an index-native accessor.
 // It exists only so the optimized engine has a slow, obviously-correct
 // ground truth to be checked against; it is never meant to be fast.
 
@@ -115,15 +116,18 @@ function field(row: Telemetry, key: string): unknown {
 export function referenceIndices(query: ReferenceQuery): number[] {
   const total = Math.max(0, Math.floor(query.total));
   const filters = Object.entries(query.filterModel);
+  // Every row is materialised once, exactly as the old engine read it.
+  const rows = Array.from({ length: total }, (_, index) => telemetryAt(index));
   const indices: number[] = [];
   for (let index = 0; index < total; index++) {
-    const row = telemetryAt(index);
-    if (filters.every(([key, model]) => matches(field(row, key), model)))
+    if (
+      filters.every(([key, model]) => matches(field(rows[index]!, key), model))
+    )
       indices.push(index);
   }
   if (query.sortModel.length) {
     const keyOf = (index: number, colId: string): string | number => {
-      const value = field(telemetryAt(index), colId);
+      const value = field(rows[index]!, colId);
       return typeof value === 'number' ? value : String(value ?? '');
     };
     indices.sort((a, b) => {

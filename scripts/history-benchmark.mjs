@@ -20,6 +20,10 @@ const option = (name, fallback) => {
 const label = args[0] && !args[0].startsWith('--') ? args[0] : 'sample';
 const entry = option('--entry', 'src/features/historical-logs/query.ts');
 const runsPerScenario = Number(option('--runs', 5));
+// The label names the output file under .claude/runs/.
+if (!/^[\w.-]+$/.test(label)) throw new Error(`Invalid label "${label}"`);
+if (!Number.isInteger(runsPerScenario) || runsPerScenario < 1)
+  throw new Error('--runs must be a positive integer');
 const TOTAL = 500000;
 const scenarios = {
   'value-asc': {
