@@ -2,10 +2,10 @@ import { useCallback, useMemo, useRef } from 'react';
 import type {
   GridApi,
   GridPreDestroyedEvent,
+  GridState,
   StateUpdatedEvent,
 } from 'ag-grid-community';
 import type { FilterSchema } from './filterSchema';
-import type { GridState } from 'ag-grid-community';
 import {
   readState,
   readStoredText,

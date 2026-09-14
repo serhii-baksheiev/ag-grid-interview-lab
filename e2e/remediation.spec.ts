@@ -741,7 +741,7 @@ test('sorts the virtual 500k dataset while remaining responsive', async ({
   );
 });
 
-test('filters the live grid by search once typing stops, then clears it', async ({
+test('filters the live grid to one location by search, then clears it', async ({
   page,
 }) => {
   await page.goto('/');
@@ -757,6 +757,11 @@ test('filters the live grid by search once typing stops, then clears it', async 
   await search.fill('Cold storage');
   await expect.poll(distinctLocations).toEqual(['Cold storage']);
 
+  // After clearing, only the rendered rows are checked (the grid is
+  // virtualised). The fleet is seeded in blocks of six devices per location
+  // (North plant first, then Cold storage), so an unsorted rendered window
+  // spans more than one location once the filter lifts. The search debounce
+  // itself is covered in LiveTelemetry.test.tsx.
   await search.fill('');
   await expect
     .poll(async () => (await distinctLocations()).length)

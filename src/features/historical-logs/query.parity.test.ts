@@ -3,6 +3,9 @@ import * as generatorModule from '../../shared/data/generator';
 import { telemetryAt } from '../../shared/data/generator';
 import { referenceIndices } from '../../test/historyReference';
 import { deserializeState } from '../../shared/grid/storage';
+import { defaultColDef } from '../../shared/grid/base';
+import { filterSchemaFor } from '../../shared/grid/filterSchema';
+import { historyColumns } from './columns';
 import {
   historyPage,
   MERGE_CHUNK_OUTPUTS,
@@ -926,10 +929,37 @@ describe('unsupported query models fail closed instead of silently matching', ()
   ] as const)('rejects %s', (_, column, model) =>
     expectUnsupported({ [column]: model }),
   );
+  it('rejects a combined model whose conditions array has holes', () =>
+    expectUnsupported({
+      value: {
+        filterType: 'number',
+        operator: 'AND',
+        // Not encodable in JSON, but a sparse array would otherwise compile no leaf.
+        conditions: new Array(2),
+      },
+    }));
   it('rejects a sort on an unknown column', () =>
     expectUnsupported({}, [{ colId: 'ghost', sort: 'asc' }]));
   it('rejects a sort direction other than asc or desc', () =>
     expectUnsupported({}, [{ colId: 'value', sort: 'ascending' }]));
+  it('rejects a sort model that repeats a column (unbounded key arrays, no decided order)', () =>
+    expectUnsupported({}, [
+      { colId: 'value', sort: 'asc' },
+      { colId: 'value', sort: 'desc' },
+    ]));
+  it('rejects a leaf carrying a stray operator without a conditions array', () =>
+    expectUnsupported({
+      value: { filterType: 'number', type: 'notBlank', operator: 'AND' },
+    }));
+  it('rejects a leaf whose conditions is not an array', () =>
+    expectUnsupported({
+      value: {
+        filterType: 'number',
+        type: 'notBlank',
+        operator: 'AND',
+        conditions: {},
+      },
+    }));
 
   it('treats a null entry in the filter model as no filter for that column', async () => {
     const withNull = await prepareHistory(
@@ -1431,17 +1461,23 @@ describe('cancellation', () => {
 // --- one filter grammar ------------------------------------------------------
 
 describe('grid-state restoration never hands the engine a filter it rejects', () => {
-  // The Historical Logs filter schema: column id -> the filter each column uses.
-  const schema = {
-    timestamp: 'date',
-    deviceId: 'text',
-    location: 'text',
-    type: 'text',
-    value: 'number',
-    status: 'text',
-    quality: 'number',
-    message: 'text',
-  } as const;
+  // The Historical Logs filter schema is derived from the columns the grid
+  // actually renders, so a column change is noticed here rather than only at
+  // runtime.
+  const schema = filterSchemaFor(historyColumns, defaultColDef);
+  it('derives the expected filter schema from the Historical Logs columns', () => {
+    expect(schema).toEqual({
+      timestamp: 'date',
+      deviceId: 'text',
+      location: 'text',
+      type: 'text',
+      status: 'text',
+      message: 'text',
+      value: 'number',
+      quality: 'number',
+      // `unit` has `filter: false`, so it never appears here.
+    });
+  });
   const comparisons = [
     'equals',
     'notEqual',
@@ -1493,7 +1529,7 @@ describe('grid-state restoration never hands the engine a filter it rejects', ()
     ],
   };
   const candidates = Object.entries(schema).flatMap(([column, filterType]) => {
-    const own = leaves[filterType];
+    const own = leaves[filterType as 'text' | 'number' | 'date'] ?? [];
     const blanks = ['blank', 'notBlank'].map((type) => ({ filterType, type }));
     const combined = ['AND', 'OR'].flatMap((operator) => [
       { filterType, operator, conditions: [own[0], own[1]] },
@@ -1523,13 +1559,18 @@ describe('grid-state restoration never hands the engine a filter it rejects', ()
       )?.filter?.filterModel?.[column];
       if (!restored) continue;
       restorable++;
-      const accepted = await prepareHistory(
-        makeQuery({ filterModel: { [column]: restored } }, 50),
-      ).then(
-        () => true,
-        (error: Error) => error.name !== 'UnsupportedQueryError',
-      );
-      if (!accepted) rejected.push(`${column}: ${JSON.stringify(restored)}`);
+      // Any rejection counts against the correspondence, not only the
+      // engine's own UnsupportedQueryError: a model restoration kept alive
+      // that the engine chokes on for some other reason is just as much a gap.
+      try {
+        await prepareHistory(
+          makeQuery({ filterModel: { [column]: restored } }, 50),
+        );
+      } catch (error) {
+        rejected.push(
+          `${column}: ${(error as Error).name}: ${JSON.stringify(restored)}`,
+        );
+      }
     }
     // Not vacuous: the well-formed models survive restoration.
     // Pinned: a change to either grammar must revisit this count rather than
