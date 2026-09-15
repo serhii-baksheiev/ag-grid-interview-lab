@@ -75,3 +75,21 @@ A second red-team pass on `main` at `215cfa2` confirmed five runtime findings an
 | DOC-02  | accepted    | Sorted-stream long tasks and drift measured and documented with method and limits                                                 | `scripts/live-stream-benchmark.mjs`                                                                                  | Three windows, unsorted vs sorted                                                           |
 | DOC-03  | accepted    | Bundle size refreshed from the current build                                                                                      | —                                                                                                                    | Matches `npm run build`                                                                     |
 | DOC-04  | accepted    | Workflow rule no longer claims a pre-commit stage                                                                                 | Prose review                                                                                                         | No `.husky/`, no `core.hooksPath`                                                           |
+
+## AGL pass (2026-09-14 to 2026-09-15)
+
+A third pass closed architecture, performance, correctness and maintainability gaps in nine items, each through its own reviewed PR. AG Grid Community stays at **36.1.0**, and no runtime or development dependency, Web Worker, Enterprise package or state library was added. Final measurements are in the [performance notes](../PERFORMANCE.md).
+
+| Item  | Outcome                                                                                                                                                                                         | PR      | Merge commit |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------ |
+| AGL-1 | Index-native historical query engine: compiled filters, dense sort keys, timestamp fast paths, chunked merge sort, parity suite against the previous engine; first fail-closed rule             | #6      | `efbf934`    |
+| AGL-5 | Every editable configuration column validates through AG Grid's editor validation hooks and the same domain rule                                                                                | #8      | `2a7325f`    |
+| AGL-2 | A `TelemetrySource` owns the live fleet; the grid is never read back                                                                                                                            | #9      | `5b2196d`    |
+| AGL-6 | Analytics aggregates sample indices without building 10,000 records                                                                                                                             | #10     | `9c04601`    |
+| AGL-4 | Grid options aligned with 36.1: no Infinite `getRowId`, default `rowBuffer`, a debounced and cached quick filter, no redundant Grid State writes                                                | #11     | `ac02d9d`    |
+| AGL-8 | Fail-closed query grammar with its own UI message, column modules for history and analytics, filter schemas derived from column definitions; the configuration parts of 8a–8c landed with AGL-3 | #12     | `85b046b`    |
+| AGL-7 | Deterministic CI gates: bundle gzip budget, Firefox E2E, main-thread timing recorded instead of asserted                                                                                        | #13     | `c479014`    |
+| AGL-3 | A configuration store owns drafts, baseline and a pending save; the screen unmounts on navigation                                                                                               | #14     | `9318ab5`    |
+| AGL-9 | Documentation reconciled with the final measurements                                                                                                                                            | this PR | —            |
+
+PR #7 (`0fded3b`) fixed a Columns checkbox that lagged a visibility change, found while verifying AGL-1.
