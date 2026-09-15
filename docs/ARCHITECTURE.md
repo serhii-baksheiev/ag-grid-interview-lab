@@ -18,14 +18,14 @@ Devices have identity, descriptive metadata, status, enabled flag, unit, samplin
 
 ```mermaid
 flowchart LR
-  Timer[Tick timer] --> Generator[Seeded changed measurements]
-  Generator --> IDs[Lookup current rows by stable ID]
-  IDs --> Transaction[applyTransactionAsync update]
+  Timer[Tick timer] --> Source[TelemetrySource tick]
+  Source --> Rows[Replacement rows for changed devices]
+  Rows --> Transaction[applyTransactionAsync update]
   Transaction --> Grid[Client-Side model and visible cells]
   Transaction --> Counters[Applied-update counters]
 ```
 
-The complete current fleet is available in memory, so the Client-Side Row Model can sort, filter and update it directly. The initial `rowData` array stays stable. Reset and resize reuse the seeded baseline and submit only changed, added or removed rows in bounded async transaction batches. Each tick builds replacement objects for changed devices and submits one transaction. AG Grid batches transactions with a 50 ms window. Row identity comes from `getRowId`, never the current displayed index.
+The complete current fleet is available in memory, so the Client-Side Row Model can sort, filter and update it directly. A `TelemetrySource` (`source.ts`) owns that fleet: the grid receives its first snapshot as `rowData` and every later change as a transaction, and is never asked for its rows (`LiveTelemetry.test.tsx` › "never reads row data back from the grid: ticks, a burst, a same-size reset, and a resize"). The initial `rowData` array stays stable. Reset and resize reuse the seeded baseline and submit only changed, added or removed rows in bounded async transaction batches. Each tick builds replacement objects for changed devices and submits one transaction. AG Grid batches transactions with a 50 ms window. Row identity comes from `getRowId`, never the current displayed index.
 
 Metrics use refs for stream counters and update React separately from every individual event. Timer cleanup stops input and flushes pending grid work when appropriate. Column definitions and shared grid props keep stable references. Rendering uses ordinary formatting where possible and a small status renderer where visual semantics justify it.
 
@@ -49,13 +49,13 @@ flowchart LR
 
 The Infinite Row Model supplies a Community-compatible block-loading interface for a flat history. It requests half-open ranges `[startRow, endRow)` through `getRows`. The datasource returns the filtered record count to stop further scrolling and uses `failCallback` for active request failures.
 
-The default unfiltered, unsorted query addresses a block directly. Filtering or sorting requires a scan across the virtual dataset. Matching source indices are retained in a `Uint32Array`; temporary scalar sort keys avoid repeatedly generating full records inside a comparator. A stable merge sort yields during work. Only the requested block becomes retained telemetry objects in the grid.
+The default unfiltered, unsorted query addresses a block directly. Filtering or sorting otherwise works over source indices: the engine compiles each filter once against the seeded generator's field accessors and builds no records while scanning (`query.parity.test.ts` › "index-native preparation never materialises a full row while preparing"). Matching indices are kept in a `Uint32Array`; sort keys are dense `Float64Array` columns, with string values ranked so equal strings share a key. Timestamps follow source order, so an ascending timestamp sort needs no index, a descending one is its reverse, and a lone date bound or range becomes an index interval. A stable bottom-up merge sort runs in synchronous chunks and yields between them. Only the requested block becomes telemetry objects in the grid.
 
 The datasource caches a promise for the current query index so valid concurrent blocks share processing. Query signature changes abort obsolete index work; request sequence numbers are diagnostic identities, not a latest-request-wins rule. Different blocks for the same query remain valid concurrently. Destroying the datasource cancels pending timers and processing. The inspector retains eight entries, not an unbounded request history.
 
 AG Grid caches eight blocks of 200 rows. Text, number and date filters are processed by the mock before pagination, including supported AND/OR conditions. A filter or sort model outside that grammar (an unknown filter type, operator or column, a repeated sort column, nested or oversized combined conditions, or a value of the wrong type) fails the request instead of matching more rows, and the screen says the filters cannot be applied rather than offering a retry. The timestamp column uses the Community date filter with `includeTime`, so the picker offers the same second-level precision the cell displays; AG Grid serialises the choice as a naive `YYYY-MM-DD HH:mm:ss` string and the mock reads it as UTC, the zone the column shows. A backend would apply the same rule explicitly instead of inheriting the browser's zone. The Infinite grid sets no `getRowId`: nothing on this screen selects or looks rows up by id, so rows keep the grid's block-position ids. ColumnControls toggles column visibility; `filterParams.debounceMs` debounces column filters and the separate Device input has its own timer. Quick Filter is used only on the client-side live grid, where the search box updates as the user types but the grid receives the text 300 ms after typing stops, and `cacheQuickFilter` keeps each row's search text until a transaction replaces that row. Historical position jumping targets the current result ordering, not a raw timestamp lookup.
 
-Cooperative yielding does not make this a server: index construction still consumes main-thread CPU and O(N) scalar/index memory. This local implementation keeps the request contract inspectable without backend setup. No full 500,000-record object array is recreated on React renders.
+Cooperative yielding does not make this a server: index construction still consumes main-thread CPU and typed-array memory proportional to the matches ([allocations](PERFORMANCE.md#index-native-engine-agl-1)). This local implementation keeps the request contract inspectable without backend setup. No full 500,000-record object array is recreated on React renders.
 
 Filtering and sorting must precede slicing: ordering a cached block alone cannot produce globally correct pages. A device ID is not a historical row ID because a device has many measurements. Likewise, aggregating only loaded grid rows cannot describe the full history. Small histories could use Client-Side; larger production histories should delegate queries to a backend.
 

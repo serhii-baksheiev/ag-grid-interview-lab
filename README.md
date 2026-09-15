@@ -51,11 +51,11 @@ Use Tab and arrow keys to navigate, Enter/F2 to edit, and Escape to cancel. Text
 
 ```mermaid
 flowchart LR
-  G[Seeded live generator] --> T[Async transactions]
+  G[Telemetry source] --> T[Async transactions]
   T --> L[Client-Side Row Model]
   Q[Mock query engine] --> B[Datasource blocks]
   B --> H[Infinite Row Model]
-  D[Draft and saved baseline] --> V[Validation and mock save]
+  D[Configuration store] --> V[Validation and mock save]
   V --> C[Configuration grid]
 ```
 
@@ -68,8 +68,8 @@ See [architecture](docs/ARCHITECTURE.md) and the [regression tests](e2e/remediat
 ## Performance decisions
 
 - **Streaming:** `applyTransactionAsync` batches updates in a 50 ms window. The [Live test](src/features/live-telemetry/LiveTelemetry.test.tsx) checks stable identity and transaction updates.
-- **History:** a compact typed index is shared across blocks. An 8 ms work budget with MessageChannel yielding avoids excessive timer clamping while allowing cancellation.
-- **Measured locally:** isolated 500k Value-sort median fell from **4,599 ms to 680 ms**, with **711 → 82 yields** across three before/after runs. This excludes grid rendering and network delay; it is not a universal benchmark.
+- **History:** filters compile once over the generator's field accessors, and a compact typed index is shared across blocks. Timestamp order and single date ranges need no sort or scan. Work runs in chunks between 8 ms budget checks and yields through MessageChannel, so cancellation stays responsive.
+- **Measured locally:** the isolated 500k Value sort takes **117 ms** (median of five, 2026-09-15). The remediation took it from 4,599 to 680 ms and the index-native engine from 1,591 to 129 ms, each against a baseline from its own session; timestamp sorts take 0–5 ms. This excludes grid rendering and network delay; it is not a universal benchmark.
 - **Reset:** seeded rows are reused for a same-size reset; changed rows are restored in bounded transactions.
 
 [Measurement method, CPU/heap observations and limitations →](docs/PERFORMANCE.md)
