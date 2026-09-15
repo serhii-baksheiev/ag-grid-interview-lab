@@ -23,7 +23,8 @@ function indicesFor(
   seed = DEMO_SEED,
 ) {
   const offset = offsetFor(tick, size, seed);
-  return Array.from({ length: amount }, (_, i) => (offset + i) % size);
+  const step = Math.max(1, Math.floor(size / amount));
+  return Array.from({ length: amount }, (_, i) => (offset + i * step) % size);
 }
 
 function amountFor(
@@ -107,15 +108,38 @@ describe('createTelemetrySource', () => {
     });
   });
 
-  it('replaces contiguous, wrapped-around positions starting at the tick offset', () => {
+  it('replaces positions an even step apart, wrapping from the tick offset', () => {
     const size = 12;
-    const changes = 8; // larger than size - offset, so the run wraps
+    const changes = 4; // step 3, so the positions wrap past the end
     const source = createTelemetrySource(size);
     const updated = source.tick({ changes, burst: false, lastSeen: LAST_SEEN });
-    const indices = indicesFor(1, size, amountFor(size, changes, 1, false));
+    const offset = offsetFor(1, size);
     expect(updated.map((row) => row.id)).toEqual(
-      indices.map((index) => `device-${String(index + 1).padStart(5, '0')}`),
+      [0, 1, 2, 3].map(
+        (i) =>
+          `device-${String(((offset + i * 3) % size) + 1).padStart(5, '0')}`,
+      ),
     );
+  });
+
+  it('spreads 1,000 changes across a 10,000-device fleet instead of one block', () => {
+    const size = 10_000;
+    const source = createTelemetrySource(size);
+    const updated = source.tick({
+      changes: 1000,
+      burst: false,
+      lastSeen: LAST_SEEN,
+    });
+    const positions = updated
+      .map((row) => Number(row.id.slice('device-'.length)) - 1)
+      .sort((a, b) => a - b);
+    expect(new Set(positions).size).toBe(1000);
+    // One device in every ten, from the start of the fleet to its end.
+    expect(positions.slice(1).every((p, i) => p - positions[i]! === 10)).toBe(
+      true,
+    );
+    expect(positions[0]).toBeLessThan(10);
+    expect(positions.at(-1)).toBeGreaterThanOrEqual(size - 10);
   });
 
   it('applies a burst (10x) only on every 8th tick when burst is enabled', () => {

@@ -59,8 +59,11 @@ export function createTelemetrySource(
       );
       const offset = Math.floor(randomAt(tick, seed) * count);
       const updates: LiveDevice[] = [];
+      // Changes are spread an even step apart across the whole fleet, not taken
+      // as one block; amount * step never exceeds count, so no index repeats.
+      const step = Math.max(1, Math.floor(count / amount));
       for (let i = 0; i < amount; i++) {
-        const index = (offset + i) % count;
+        const index = (offset + i * step) % count;
         const current = fleet[index]!;
         const value = measurementAt(tick * count + index, current.type, seed);
         const next = {
