@@ -522,3 +522,57 @@ describe('configuration store ownership survives unmounting the screen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saving changes…');
   });
 });
+
+// A save changes no row data and a rejected write changes no cell value, so the
+// grid restyles these only through the refresh paths the screen triggers.
+describe('configuration row and cell styling', () => {
+  const rowsOf = (id: string) =>
+    Array.from(document.querySelectorAll(`[row-id='${id}']`));
+
+  it('marks an added row dirty and drops the mark once the save lands', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add device' }));
+    await screen.findByRole('gridcell', { name: 'New sensor 101' });
+    expect(rowsOf('device-00101').length).toBeGreaterThan(0);
+    for (const row of rowsOf('device-00101'))
+      expect(row).toHaveClass('row-dirty');
+    for (const row of rowsOf('device-00001'))
+      expect(row).not.toHaveClass('row-dirty');
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Saved successfully');
+    expect(rowsOf('device-00101').length).toBeGreaterThan(0);
+    for (const row of rowsOf('device-00101'))
+      expect(row).not.toHaveClass('row-dirty');
+  });
+
+  it('styles a rejected cell as an error until validation is dismissed', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = generateDevices(1)[0]!;
+    await screen.findByRole('gridcell', { name: original.name });
+    const cell = () =>
+      document.querySelector(
+        "[row-id='device-00001'] [col-id='warningThreshold']",
+      )!;
+    expect(cell()).not.toHaveClass('cell-error');
+    fireEvent.click(cell());
+    fireEvent.keyDown(cell(), { key: 'Delete' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Enter a finite warning threshold.',
+    );
+    expect(cell()).toHaveClass('cell-error');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss validation' }));
+    expect(cell()).not.toHaveClass('cell-error');
+  });
+});

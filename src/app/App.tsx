@@ -1,9 +1,10 @@
-﻿import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import '../shared/grid/register';
 import LiveTelemetry from '../features/live-telemetry/LiveTelemetry';
 import HistoricalLogs from '../features/historical-logs/HistoricalLogs';
 import Analytics from '../features/analytics/Analytics';
 import DeviceConfiguration from '../features/device-configuration/DeviceConfiguration';
+import { createConfigurationStore } from '../features/device-configuration/store';
 import { ErrorBoundary } from '../shared/ui/ErrorBoundary';
 import './styles.css';
 import './responsive.css';
@@ -36,7 +37,20 @@ const navigation = [
 type View = (typeof navigation)[number]['id'];
 export function App() {
   const [view, setView] = useState<View>('live');
-  const [configVisited, setConfigVisited] = useState(false);
+  // The configuration session outlives its screen, so drafts and a pending
+  // save survive navigation while the screen itself unmounts.
+  const [configuration] = useState(() => createConfigurationStore());
+  const hasUnsavedChanges = useSyncExternalStore(
+    configuration.subscribe,
+    () => configuration.getSnapshot().dirtyCount > 0,
+  );
+  useEffect(() => () => configuration.dispose(), [configuration]);
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeExit = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warnBeforeExit);
+    return () => window.removeEventListener('beforeunload', warnBeforeExit);
+  }, [hasUnsavedChanges]);
   const [dark, setDark] = useState(() => {
     try {
       return localStorage.getItem('iot-lab:v1:theme') === 'dark';
@@ -67,10 +81,7 @@ export function App() {
               aria-current={view === item.id ? 'page' : undefined}
               aria-label={item.label}
               className={view === item.id ? 'nav-active' : ''}
-              onClick={() => {
-                setView(item.id);
-                if (item.id === 'configuration') setConfigVisited(true);
-              }}
+              onClick={() => setView(item.id)}
             >
               <span className="nav-icon" aria-hidden="true">
                 {item.icon}
@@ -142,12 +153,10 @@ export function App() {
               <Analytics />
             </ErrorBoundary>
           )}
-          {configVisited && (
-            <div hidden={view !== 'configuration'}>
-              <ErrorBoundary storageKey="iot-lab:v1:configuration">
-                <DeviceConfiguration />
-              </ErrorBoundary>
-            </div>
+          {view === 'configuration' && (
+            <ErrorBoundary storageKey="iot-lab:v1:configuration">
+              <DeviceConfiguration store={configuration} />
+            </ErrorBoundary>
           )}
         </main>
         <footer className="app-footer">

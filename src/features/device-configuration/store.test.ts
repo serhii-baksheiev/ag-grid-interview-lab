@@ -129,20 +129,23 @@ describe('createConfigurationStore: snapshot and subscription', () => {
   });
 });
 
-describe('createConfigurationStore: isDirty', () => {
-  it('is false for an unmodified row and true once it differs from the baseline', () => {
+describe('createConfigurationStore: dirtyRows', () => {
+  const dirtyIds = (store: ReturnType<typeof createConfigurationStore>) =>
+    store.getSnapshot().dirtyRows.map((row) => row.id);
+
+  it('omits an unmodified row and includes it once it differs from the baseline', () => {
     const store = createConfigurationStore({ devices: fleet(2) });
     const [first, second] = store.getSnapshot().drafts;
-    expect(store.isDirty(first!.id)).toBe(false);
+    expect(dirtyIds(store)).toEqual([]);
     store.edit(first!.id, 'location', 'Somewhere else');
-    expect(store.isDirty(first!.id)).toBe(true);
-    expect(store.isDirty(second!.id)).toBe(false);
+    expect(dirtyIds(store)).toEqual([first!.id]);
+    expect(dirtyIds(store)).not.toContain(second!.id);
   });
 
-  it('is true for a newly added row', () => {
+  it('includes a newly added row', () => {
     const store = createConfigurationStore({ devices: fleet(1) });
     store.add();
-    expect(store.isDirty('device-00101')).toBe(true);
+    expect(dirtyIds(store)).toContain('device-00101');
   });
 });
 
@@ -191,7 +194,7 @@ describe('createConfigurationStore: edit', () => {
     const changed = store.edit(id, 'name', '   ');
     expect(changed).toBe(false);
     expect(store.getSnapshot().drafts[0]!.name).toBe(original);
-    expect(store.isDirty(id)).toBe(false);
+    expect(store.getSnapshot().dirtyRows).toEqual([]);
   });
 
   it('records an empty error entry and returns false for a no-op write of the current value', () => {
