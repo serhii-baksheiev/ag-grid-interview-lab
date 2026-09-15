@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type FocusEvent,
+} from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type {
   ColDef,
@@ -120,11 +126,31 @@ export default function DeviceConfiguration({
     setDeleteIds([]);
     document.getElementById('delete-selected')?.focus();
   }
+  // Focus leaving the screen, often to the navigation that unmounts it: commit
+  // what the editors allow and cancel an editor block mode still holds. A React
+  // editor re-attached while blocked schedules grid work that must not outlive
+  // the grid, and the draft could not have been kept anyway.
+  function leaveScreen(event: FocusEvent<HTMLElement>) {
+    const next = event.relatedTarget;
+    // Clicking content the browser cannot focus moves focus to an ancestor
+    // (the page's main region): that is still inside the screen.
+    if (
+      !api ||
+      !next ||
+      event.currentTarget.contains(next) ||
+      next.contains(event.currentTarget)
+    )
+      return;
+    api.stopEditing();
+    if (api.getEditingCells().length) api.stopEditing(true);
+  }
   const validationMessages = Object.entries(errors).flatMap(([id, fields]) =>
     Object.values(fields).map((error) => `${id}: ${error}`),
   );
   return (
-    <section aria-label="Device Configuration">
+    // Capture phase: this runs before the grid's own focus-out handling tries,
+    // and fails, to stop the blocked editor.
+    <section aria-label="Device Configuration" onBlurCapture={leaveScreen}>
       <div className="feature-heading">
         <div>
           <p className="eyebrow">03 / FLEET MANAGEMENT</p>

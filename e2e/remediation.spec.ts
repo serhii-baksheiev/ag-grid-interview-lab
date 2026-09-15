@@ -336,6 +336,80 @@ for (const invalid of [' ', '   '])
     ).toBeVisible();
   });
 
+test('leaves Device Configuration by mouse while an invalid name editor is open, without a page error', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  const original = generateDevices(1)[0]!.name;
+  await page.getByRole('gridcell', { name: original, exact: true }).dblclick();
+  const editor = page.getByRole('textbox', { name: 'Device name editor' });
+  await editor.fill(' ');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+  // One mouse click both moves focus out of the screen and unmounts its grid.
+  await openView(page, 'Analytics');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Analytics');
+  await openView(page, 'Device Configuration');
+  await expect(
+    page.getByRole('gridcell', { name: original, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
+test('cancels an invalid name editor when focus leaves the configuration screen', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  const original = generateDevices(1)[0]!.name;
+  await page.getByRole('gridcell', { name: original, exact: true }).dblclick();
+  const editor = page.getByRole('textbox', { name: 'Device name editor' });
+  await editor.fill(' ');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+  // Focus moves to a control outside the screen; the blocked draft is abandoned.
+  await page.getByRole('button', { name: 'Use dark theme' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Use light theme' }),
+  ).toBeFocused();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(
+    page.getByRole('gridcell', { name: original, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
+test('keeps an invalid name editor blocked when content inside the configuration screen is clicked', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  const original = generateDevices(1)[0]!.name;
+  await page.getByRole('gridcell', { name: original, exact: true }).dblclick();
+  const editor = page.getByRole('textbox', { name: 'Device name editor' });
+  await editor.fill(' ');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+  // The heading cannot take focus, so the browser focuses the page's main region.
+  await page
+    .getByRole('heading', { level: 1, name: 'Device Configuration' })
+    .click();
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue(' ');
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
 test('blocks committing an empty or out-of-range sampling interval with Enter and commits a valid one', async ({
   page,
 }) => {
