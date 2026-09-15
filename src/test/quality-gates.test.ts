@@ -146,11 +146,8 @@ describe('.github/workflows/ci.yml', () => {
     // A real step line, not a comment mentioning the command.
     expect(qualityJob).toMatch(/^\s+- run: npm run check:bundle\s*$/m);
     expect(ciYaml).not.toMatch(/continue-on-error/);
-    // The only condition in the workflow uploads artifacts after a failure.
-    const conditions = ciYaml.match(/^\s+if:.*$/gm) ?? [];
-    expect(conditions.map((line) => line.trim())).toEqual(
-      conditions.map(() => 'if: failure()'),
-    );
+    // No step in the Quality job runs conditionally, so the budget step always runs.
+    expect(qualityJob!.match(/^\s+if:.*$/gm) ?? []).toEqual([]);
   });
 
   it('builds before running the Firefox suite', () => {

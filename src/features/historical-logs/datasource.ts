@@ -65,6 +65,14 @@ export function createHistoryDatasource(options: {
         query = JSON.stringify([params.filterModel, params.sortModel]);
       } catch {
         // A model JSON cannot encode (cyclic, BigInt) is outside the query grammar.
+        // It still replaces the query before it: a response to that query must
+        // not land rows or clear this failure.
+        signature = '';
+        generation++;
+        cancelAll();
+        controller = new AbortController();
+        index = undefined;
+        matchedTotal = undefined;
         failed = true;
         failure = 'unsupported';
         try {

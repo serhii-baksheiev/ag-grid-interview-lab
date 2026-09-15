@@ -8,6 +8,7 @@
 // `--entry` points the same harness at another revision's query.ts (for example a
 // `git worktree` of the baseline), so before/after figures share one method.
 import { build } from 'vite';
+import { median } from './median.mjs';
 import { chromium } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { requireAbort } from './require-abort.mjs';
@@ -67,11 +68,6 @@ await page.addScriptTag({
 const cdp = await page.context().newCDPSession(page);
 await cdp.send('Performance.enable');
 const metric = (data, name) => data.metrics.find((x) => x.name === name).value;
-const median = (values) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-};
-
 const report = {};
 for (const [name, query] of Object.entries(scenarios)) {
   const runs = [];

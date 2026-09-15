@@ -12,6 +12,7 @@
 //     Opens a production preview, marks the click on Analytics and measures until
 //     the summary grid shows a cell, on a fresh page per run.
 import { build } from 'vite';
+import { median } from './median.mjs';
 import { chromium } from '@playwright/test';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -28,11 +29,6 @@ if (!['aggregate', 'render'].includes(mode))
 if (!/^[\w.-]+$/.test(label)) throw new Error(`Invalid label "${label}"`);
 if (!Number.isInteger(runs) || runs < 1)
   throw new Error('--runs must be a positive integer');
-const median = (values) => {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-};
-
 const browser = await chromium.launch();
 let durations = [];
 let detail = {};
