@@ -456,11 +456,9 @@ test('keeps a renamed draft across navigation, but native cell Undo resets once 
     page.getByText('1 unsaved changes', { exact: true }),
   ).toBeVisible();
 
-  // Today the screen never truly unmounts, so the grid instance (and its
-  // native undo history recorded before navigating away) is still the same
-  // one: Undo actually reverts the rename. Once the screen remounts for
-  // real, this history resets with it and Undo becomes a no-op here — the
-  // draft itself is unaffected either way, because the store owns it.
+  // The screen remounted, so this is a new grid instance whose native undo
+  // history starts empty: Undo has nothing to revert. The draft itself is
+  // unaffected, because the store owns it.
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(
     page.getByRole('gridcell', { name: 'Survives navigation', exact: true }),

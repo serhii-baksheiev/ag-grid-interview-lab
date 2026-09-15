@@ -499,3 +499,44 @@ describe('createConfigurationStore: dirty derivations', () => {
     expect(snapshot.dirtyCount).toBe(3);
   });
 });
+
+describe('createConfigurationStore: structural changes while saving', () => {
+  it('ignores add and revert while a save is in flight', () => {
+    vi.useFakeTimers();
+    const store = createConfigurationStore({
+      devices: fleet(1),
+      saveDelayMs: 1000,
+    });
+    const id = store.getSnapshot().drafts[0]!.id;
+    store.edit(id, 'location', 'Changed');
+    store.save();
+    const drafts = store.getSnapshot().drafts;
+    store.add();
+    store.revert();
+    expect(store.getSnapshot().drafts).toBe(drafts);
+    expect(store.getSnapshot().drafts[0]!.location).toBe('Changed');
+    expect(store.getSnapshot().message).toBe('Saving changes…');
+  });
+});
+
+describe('createConfigurationStore: isNew', () => {
+  it('is true only for a draft the saved baseline does not contain', () => {
+    const store = createConfigurationStore({ devices: fleet(1) });
+    const id = store.getSnapshot().drafts[0]!.id;
+    store.add();
+    expect(store.isNew('device-00101')).toBe(true);
+    expect(store.isNew(id)).toBe(false);
+  });
+
+  it('turns false once the new draft is saved', () => {
+    vi.useFakeTimers();
+    const store = createConfigurationStore({
+      devices: fleet(1),
+      saveDelayMs: 10,
+    });
+    store.add();
+    store.save();
+    vi.advanceTimersByTime(10);
+    expect(store.isNew('device-00101')).toBe(false);
+  });
+});
