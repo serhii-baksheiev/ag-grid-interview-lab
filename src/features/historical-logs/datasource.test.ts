@@ -256,6 +256,84 @@ describe('asynchronous historical datasource', () => {
     });
     source.destroy?.();
   });
+  it('supersedes a pending query when the next filter model cannot be serialised', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 100,
+      fail: () => false,
+      onStatus,
+    });
+    const pending = request();
+    source.getRows(pending);
+    const cyclic: Record<string, unknown> = {
+      filterType: 'text',
+      type: 'contains',
+      filter: 'device',
+    };
+    cyclic.self = cyclic;
+    const unsupported = request(0, { deviceId: cyclic });
+    source.getRows(unsupported);
+    await vi.runAllTimersAsync();
+    // The older query must not land rows or clear the unsupported failure.
+    expect(pending.successCallback).not.toHaveBeenCalled();
+    expect(pending.failCallback).toHaveBeenCalledOnce();
+    expect(unsupported.failCallback).toHaveBeenCalledOnce();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 0,
+      error: true,
+      failure: 'unsupported',
+    });
+    source.destroy?.();
+  });
+  it('reports every status after an unserialisable model as that failure, then clears it for the next valid query', async () => {
+    vi.useFakeTimers();
+    const onStatus = vi.fn();
+    const source = createHistoryDatasource({
+      total: 100,
+      latency: 100,
+      fail: () => false,
+      onStatus,
+    });
+    source.getRows(request());
+    await vi.runAllTimersAsync();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      total: 100,
+      error: false,
+    });
+    source.getRows(request(10));
+    const cyclic: Record<string, unknown> = {
+      filterType: 'text',
+      type: 'contains',
+      filter: 'device',
+    };
+    cyclic.self = cyclic;
+    const before = onStatus.mock.calls.length;
+    source.getRows(request(0, { deviceId: cyclic }));
+    const emitted = onStatus.mock.calls.slice(before).map(([status]) => status);
+    // Cancelling the pending block emits as well; no status may still show the
+    // previous query's total or success.
+    expect(emitted.length).toBeGreaterThan(1);
+    for (const status of emitted)
+      expect(status).toMatchObject({
+        error: true,
+        failure: 'unsupported',
+        total: undefined,
+      });
+    source.getRows(request());
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 1,
+      error: false,
+    });
+    await vi.runAllTimersAsync();
+    expect(onStatus.mock.lastCall?.[0]).toMatchObject({
+      pending: 0,
+      error: false,
+      total: 100,
+    });
+    source.destroy?.();
+  });
   it('settles calls queued after destruction exactly once', () => {
     const source = createHistoryDatasource({
       total: 100,

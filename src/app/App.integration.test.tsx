@@ -575,4 +575,46 @@ describe('configuration row and cell styling', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss validation' }));
     expect(cell()).not.toHaveClass('cell-error');
   });
+
+  async function renameFirstDevice(name: string) {
+    const original = generateDevices(1)[0]!;
+    const cell = await screen.findByRole('gridcell', { name: original.name });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Device name editor',
+    });
+    fireEvent.change(editor, { target: { value: name } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    await screen.findByRole('gridcell', { name });
+    expect(rowsOf(original.id).length).toBeGreaterThan(0);
+    for (const row of rowsOf(original.id)) expect(row).toHaveClass('row-dirty');
+    return original;
+  }
+
+  it('drops the dirty mark when Undo restores an edited row', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = await renameFirstDevice('Styled by undo');
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findByRole('gridcell', { name: original.name });
+    expect(rowsOf(original.id).length).toBeGreaterThan(0);
+    for (const row of rowsOf(original.id))
+      expect(row).not.toHaveClass('row-dirty');
+  });
+
+  it('drops the dirty mark when Revert all restores an edited row', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = await renameFirstDevice('Styled by revert');
+    fireEvent.click(screen.getByRole('button', { name: 'Revert all' }));
+    await screen.findByRole('gridcell', { name: original.name });
+    expect(rowsOf(original.id).length).toBeGreaterThan(0);
+    for (const row of rowsOf(original.id))
+      expect(row).not.toHaveClass('row-dirty');
+  });
 });

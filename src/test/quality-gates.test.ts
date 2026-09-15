@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { devices } from '@playwright/test';
@@ -46,14 +46,16 @@ describe('package.json scripts', () => {
     expect(pkg.scripts['check:bundle']).toBe('node scripts/bundle-budget.mjs');
   });
 
-  it('runs every script test from test:benchmark, including the new bundle-budget test', () => {
+  it('runs every scripts/*.test.mjs file from test:benchmark', () => {
     const command = pkg.scripts['test:benchmark'];
     const runsGlob = /node --test scripts\/\*\.test\.mjs/.test(command);
-    const runsExplicitList =
-      command.includes('require-abort.test.mjs') &&
-      command.includes('bundle-budget.test.mjs');
+    const scriptTests = readdirSync(resolve(repoRoot, 'scripts')).filter(
+      (name) => name.endsWith('.test.mjs'),
+    );
 
-    expect(runsGlob || runsExplicitList).toBe(true);
+    expect(scriptTests.length).toBeGreaterThan(0);
+    for (const name of scriptTests)
+      expect(runsGlob || command.includes(`scripts/${name}`), name).toBe(true);
   });
 
   it('keeps test:e2e:ci running playwright without rebuilding', () => {
@@ -146,7 +148,9 @@ describe('.github/workflows/ci.yml', () => {
     // A real step line, not a comment mentioning the command.
     expect(qualityJob).toMatch(/^\s+- run: npm run check:bundle\s*$/m);
     expect(ciYaml).not.toMatch(/continue-on-error/);
-    // The only condition in the workflow uploads artifacts after a failure.
+    // No step in the Quality job runs conditionally, so the budget step always runs.
+    expect(qualityJob!.match(/^\s+if:.*$/gm) ?? []).toEqual([]);
+    // Elsewhere the only condition uploads artifacts after a failure.
     const conditions = ciYaml.match(/^\s+if:.*$/gm) ?? [];
     expect(conditions.map((line) => line.trim())).toEqual(
       conditions.map(() => 'if: failure()'),

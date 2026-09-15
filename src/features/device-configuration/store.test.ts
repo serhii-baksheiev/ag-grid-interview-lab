@@ -565,4 +565,20 @@ describe('createConfigurationStore: dirtyRows identity', () => {
     expect(store.getSnapshot().dirtyRows).not.toBe(dirty);
     expect(store.getSnapshot().dirtyRows).toEqual([]);
   });
+
+  it('replaces the dirtyRows array when a revert copies a row that stays dirty', () => {
+    const store = createConfigurationStore({ devices: fleet(2) });
+    const [first, second] = store.getSnapshot().drafts;
+    store.edit(first!.id, 'location', 'Changed');
+    const dirty = store.getSnapshot().dirtyRows;
+    // Reverting only the clean row copies every draft: the dirty set keeps its
+    // size but now holds a different object for the dirty row.
+    store.revert([second!.id]);
+    const snapshot = store.getSnapshot();
+    expect(snapshot.dirtyRows).not.toBe(dirty);
+    expect(snapshot.dirtyRows).toHaveLength(1);
+    expect(snapshot.dirtyRows[0]).toBe(
+      snapshot.drafts.find((row) => row.id === first!.id),
+    );
+  });
 });

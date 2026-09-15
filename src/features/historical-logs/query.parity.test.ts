@@ -1363,6 +1363,12 @@ describe('cooperative yield points', () => {
     );
     expect(index.stats.yields).toBe(Math.ceil(total / QUERY_CHUNK_ROWS));
   });
+  it('keeps each synchronous chunk small enough for the time budget to be checked often', () => {
+    // The counts above follow these sizes, so they alone would stay green if a
+    // chunk grew until one task blocked the main thread for most of a scan.
+    expect(QUERY_CHUNK_ROWS).toBeLessThanOrEqual(4096);
+    expect(MERGE_CHUNK_OUTPUTS).toBeLessThanOrEqual(65536);
+  });
   it('never yields more often than its chunk boundaries on a real clock', async () => {
     const total = 500_000;
     const index = await prepareHistory(
