@@ -1,210 +1,119 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type {
   ColDef,
   GridApi,
-  RowClassParams,
+  RowClassRules,
   RowSelectionOptions,
-  ValueSetterParams,
 } from 'ag-grid-community';
 import type { Device } from '../../shared/types';
-import { generateDevices } from '../../shared/data/generator';
 import { defaultColDef, getRowId, gridTheme } from '../../shared/grid/base';
 import { ConfigurationToolbar } from './ConfigurationToolbar';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { useGridState } from '../../shared/grid/useGridState';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
 import { configurationColumns } from './columns';
-import { isDirty, revertDevices, validateDevice } from './model';
+import type { ConfigurationStore } from './store';
 
 const rowSelection: RowSelectionOptions<Device> = { mode: 'multiRow' };
-const copy = (rows: Device[]) => rows.map((row) => ({ ...row }));
+const columnDefs = configurationColumns();
+const filterSchema = filterSchemaFor(columnDefs, defaultColDef);
 
-export default function DeviceConfiguration() {
-  const [rows, setRows] = useState(() => generateDevices(100));
-  const [saved, setSaved] = useState(() => generateDevices(100));
-  const savedRef = useRef(saved);
+/** Column defaults that write through the store and read its save lock and errors. */
+function storeColumnDefaults(store: ConfigurationStore): ColDef<Device> {
+  const saving = () => store.getSnapshot().saving;
+  return {
+    ...defaultColDef,
+    valueSetter: (params) => {
+      const field = params.colDef.field as keyof Device | undefined;
+      if (!field) return false;
+      const changed = store.edit(params.data.id, field, params.newValue);
+      // Error styling for this row may have changed even when the write was refused.
+      params.api.refreshCells({ rowNodes: [params.node!], force: true });
+      return changed;
+    },
+    editable: () => !saving(),
+    suppressKeyboardEvent: ({ event }) =>
+      saving() &&
+      (event.ctrlKey || event.metaKey) &&
+      ['z', 'y'].includes(event.key.toLowerCase()),
+    cellClassRules: {
+      'cell-error': (params) =>
+        !!params.data &&
+        !!store.errorFor(params.data.id, params.colDef.field ?? ''),
+    },
+    tooltipValueGetter: (params) =>
+      params.data
+        ? (store.errorFor(
+            params.data.id,
+            params.colDef && 'field' in params.colDef
+              ? (params.colDef.field ?? '')
+              : '',
+          ) ?? 'Double-click or press Enter to edit')
+        : '',
+  };
+}
+
+export default function DeviceConfiguration({
+  store,
+}: {
+  store: ConfigurationStore;
+}) {
+  const {
+    drafts,
+    errors,
+    message,
+    saveError,
+    saving,
+    failSave,
+    dirtyRows,
+    deletedRows,
+    dirtyCount,
+  } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [api, setApi] = useState<GridApi<Device>>();
   const [selected, setSelected] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const [failSave, setFailSave] = useState(false);
-  const [message, setMessage] = useState('');
-  const [saveError, setSaveError] = useState(false);
-  const [errors, setErrors] = useState<Record<string, Record<string, string>>>(
-    {},
-  );
-  const errorsRef = useRef(errors);
-  const [, refresh] = useState(0);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
-  const nextId = useRef(101);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const columnDefs = useMemo(() => configurationColumns(), []);
-  const filterSchema = useMemo(
-    () => filterSchemaFor(columnDefs, defaultColDef),
-    [columnDefs],
-  );
   const gridState = useGridState('configuration', filterSchema);
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const setValue = useCallback((params: ValueSetterParams<Device, unknown>) => {
-    if (savingRef.current || !params.colDef.field) return false;
-    const candidate = {
-      ...params.data,
-      [params.colDef.field]: params.newValue,
-    };
-    const problems = validateDevice(candidate);
-    const nextErrors = { ...errorsRef.current, [candidate.id]: problems };
-    errorsRef.current = nextErrors;
-    setErrors(nextErrors);
-    params.api.refreshCells({ rowNodes: [params.node!], force: true });
-    if (Object.keys(problems).length) return false;
-    if (params.oldValue === params.newValue) return false;
-    Object.assign(params.data, candidate);
-    setMessage('');
-    setSaveError(false);
-    return true;
-  }, []);
-  const defaults = useMemo<ColDef<Device>>(
-    () => ({
-      ...defaultColDef,
-      valueSetter: setValue,
-      editable: () => !savingRef.current,
-      suppressKeyboardEvent: ({ event }) =>
-        savingRef.current &&
-        (event.ctrlKey || event.metaKey) &&
-        ['z', 'y'].includes(event.key.toLowerCase()),
-      cellClassRules: {
-        'cell-error': (params) =>
-          !!params.data &&
-          !!errorsRef.current[params.data.id]?.[params.colDef.field ?? ''],
-      },
-      tooltipValueGetter: (params) =>
-        params.data
-          ? (errorsRef.current[params.data.id]?.[
-              params.colDef && 'field' in params.colDef
-                ? (params.colDef.field ?? '')
-                : ''
-            ] ?? 'Double-click or press Enter to edit')
-          : '',
-    }),
-    [setValue],
+  const defaults = useMemo(() => storeColumnDefaults(store), [store]);
+  const dirtyIds = useMemo(
+    () => new Set(dirtyRows.map((row) => row.id)),
+    [dirtyRows],
   );
-  const rowClassRules = useMemo(
-    () => ({
-      'row-dirty': (params: RowClassParams<Device>) =>
-        !!params.data &&
-        isDirty(
-          params.data,
-          savedRef.current.find((row) => row.id === params.data!.id),
-        ),
-    }),
-    [],
+  // The grid re-applies row classes when this option changes identity. A save
+  // changes no row data, so this is how saved rows lose `row-dirty` without a redraw.
+  const rowClassRules = useMemo<RowClassRules<Device>>(
+    () => ({ 'row-dirty': ({ data }) => !!data && dirtyIds.has(data.id) }),
+    [dirtyIds],
   );
-  const baseline = new Map(saved.map((row) => [row.id, row]));
-  const dirtyRows = rows.filter((row) => isDirty(row, baseline.get(row.id)));
-  const deletedRows = saved.filter(
-    (row) => !rows.some((current) => current.id === row.id),
-  );
-  const dirtyCount = dirtyRows.length + deletedRows.length;
+  // Starting and finishing a save changes editability and clears error styling.
   useEffect(() => {
-    if (!dirtyCount) return;
-    const warnBeforeExit = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener('beforeunload', warnBeforeExit);
-    return () => window.removeEventListener('beforeunload', warnBeforeExit);
-  }, [dirtyCount]);
-  const clearErrors = () => {
-    errorsRef.current = {};
-    setErrors({});
-  };
-  const commitBaseline = (next: Device[]) => {
-    savedRef.current = next;
-    setSaved(next);
-    api?.redrawRows();
-  };
+    api?.refreshCells({ force: true });
+  }, [api, saving]);
 
   function save(ids?: string[]) {
-    if (savingRef.current) return;
+    if (saving) return;
     api?.stopEditing();
-    // Block mode keeps an invalid editor open; its draft has not reached the rows.
+    // Block mode keeps an invalid editor open; its value has not reached the store.
     if (api?.getEditingCells().length) {
-      setSaveError(true);
-      setMessage('Correct invalid values before saving.');
+      store.refuseSave();
       return;
     }
-    const selectedIds = ids ? new Set(ids) : undefined;
-    const targets = rows.filter(
-      (row) => !selectedIds || selectedIds.has(row.id),
-    );
-    if (targets.some((row) => Object.keys(validateDevice(row)).length)) {
-      setSaveError(true);
-      setMessage('Correct invalid values before saving.');
-      return;
-    }
-    const snapshot = copy(rows);
-    savingRef.current = true;
-    setSaving(true);
-    setSaveError(false);
-    setMessage('Saving changes…');
-    api?.refreshCells({ force: true });
-    timer.current = setTimeout(() => {
-      if (failSave) {
-        setSaveError(true);
-        setMessage('Save failed. Your changes are still here.');
-      } else {
-        const next = selectedIds
-          ? [
-              ...saved.flatMap((row) => {
-                if (!selectedIds.has(row.id)) return [row];
-                const updated = snapshot.find(
-                  (current) => current.id === row.id,
-                );
-                return updated ? [updated] : [];
-              }),
-              ...snapshot.filter(
-                (row) =>
-                  selectedIds.has(row.id) &&
-                  !saved.some((previous) => previous.id === row.id),
-              ),
-            ]
-          : snapshot;
-        commitBaseline(copy(next));
-        clearErrors();
-        setMessage('Saved successfully');
-      }
-      savingRef.current = false;
-      setSaving(false);
-      api?.refreshCells({ force: true });
-    }, 450);
+    store.save(ids);
   }
   function revert(ids?: string[]) {
     api?.stopEditing(true);
-    setRows(revertDevices(rows, saved, ids));
-    clearErrors();
-    setMessage('Changes reverted');
-    setSaveError(false);
+    store.revert(ids);
   }
   function add() {
     api?.stopEditing();
-    const id = nextId.current++;
-    const row = {
-      ...generateDevices(1)[0],
-      id: `device-${String(id).padStart(5, '0')}`,
-      name: `New sensor ${id}`,
-    } as Device;
-    setRows((current) => [row, ...current]);
-    setMessage('');
-    setSaveError(false);
+    store.add();
   }
   function confirmDelete() {
-    if (savingRef.current) return;
+    if (saving) return;
     api?.stopEditing(true);
-    setRows((current) => current.filter((row) => !deleteIds.includes(row.id)));
+    store.stageDeletion(deleteIds);
     setDeleteIds([]);
     setSelected([]);
-    setMessage(
-      'Deletion staged. Save all to confirm or Revert all to restore.',
-    );
     document.getElementById('add-device')?.focus();
   }
   function cancelDelete() {
@@ -226,7 +135,7 @@ export default function DeviceConfiguration() {
       </div>
       <InfoPanel
         model="Client-Side"
-        size={rows.length}
+        size={drafts.length}
         strategy="Validated cell edits"
         processing="Browser + mock save"
         tradeoff="Pessimistic saves preserve drafts on failure. Saved values last for this session."
@@ -237,7 +146,7 @@ export default function DeviceConfiguration() {
         selected={selected}
         dirtyCount={dirtyCount}
         failSave={failSave}
-        setFailSave={setFailSave}
+        setFailSave={store.setFailSave}
         add={add}
         save={save}
         revert={revert}
@@ -266,7 +175,7 @@ export default function DeviceConfiguration() {
           Edit rejected. {Array.from(new Set(validationMessages)).join(' ')}{' '}
           <button
             onClick={() => {
-              clearErrors();
+              store.dismissValidation();
               api?.refreshCells({ force: true });
             }}
           >
@@ -302,7 +211,7 @@ export default function DeviceConfiguration() {
       <div className="grid-frame">
         <AgGridReact<Device>
           theme={gridTheme}
-          rowData={rows}
+          rowData={drafts}
           columnDefs={columnDefs}
           defaultColDef={defaults}
           getRowId={getRowId}
@@ -328,9 +237,6 @@ export default function DeviceConfiguration() {
           onSelectionChanged={(event) =>
             setSelected(event.api.getSelectedRows().map((row) => row.id))
           }
-          onCellValueChanged={() => {
-            refresh((n) => n + 1);
-          }}
         />
       </div>
       <section className="panel unsaved-list" aria-label="Unsaved change list">
@@ -341,7 +247,7 @@ export default function DeviceConfiguration() {
           <ul>
             {dirtyRows.map((row) => (
               <li key={row.id}>
-                {row.name}: {baseline.has(row.id) ? 'modified' : 'new device'}
+                {row.name}: {store.isNew(row.id) ? 'new device' : 'modified'}
               </li>
             ))}
             {deletedRows.map((row) => (
@@ -351,11 +257,11 @@ export default function DeviceConfiguration() {
         )}
       </section>
       <p className="footnote">
-        Undo/redo covers cell edits. Sorting, filtering, row replacement and
-        column layout or visibility changes clear its history. Undo/Redo is
-        locked during Save. Browser text copy and paste inside editors are
-        available. Grid range selection and bulk clipboard operations require
-        Enterprise.
+        Undo/redo covers cell edits. Sorting, filtering, row replacement, column
+        layout or visibility changes and leaving this screen clear its history.
+        Undo/Redo is locked during Save. Browser text copy and paste inside
+        editors are available. Grid range selection and bulk clipboard
+        operations require Enterprise.
       </p>
     </section>
   );

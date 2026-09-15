@@ -61,7 +61,7 @@ flowchart LR
 
 Feature folders own their columns, models and screen components. Shared code handles deterministic data, formatting, themes and validated view storage. There is no global state manager or universal grid wrapper.
 
-Historical requests finish exactly once, including cancellation. Query changes abort stale work; changing only simulated latency preserves the query index. Grid State is restored section by section, retaining valid column settings when a filter is malformed. Configuration remains mounted after its first visit so navigation preserves drafts.
+Historical requests finish exactly once, including cancellation. Query changes abort stale work; changing only simulated latency preserves the query index. Grid State is restored section by section, retaining valid column settings when a filter is malformed. Configuration drafts, the saved baseline and a pending save live in a store the app shell owns, so leaving the screen unmounts its grid without losing the draft.
 
 See [architecture](docs/ARCHITECTURE.md) and the [regression tests](e2e/remediation.spec.ts).
 
@@ -129,7 +129,7 @@ The [CI workflow](.github/workflows/ci.yml) runs a quality job (including the bu
 
 Historical data and network failures are synthetic. Query work still runs in the browser; 500k describes a virtual historical dataset, not 500k rendered rows. Configuration saves persist **in memory for the current session**. Only view settings are stored in localStorage.
 
-Undo/redo covers cell edits, not the application's full history. Sorting, filtering, row replacement and column layout/visibility changes can clear the native undo stack. Save locks editing and undo shortcuts until completion.
+Undo/redo covers cell edits, not the application's full history. Sorting, filtering, row replacement and column layout/visibility changes can clear the native undo stack, and leaving Configuration starts it empty when you return. Save locks editing and undo shortcuts until completion.
 
 This is a local engineering reference. Production monitoring would require durable storage, access control and reliable stream delivery; accessibility checks do not constitute WCAG certification. Local performance results depend on hardware, browser, load and query shape.
 
