@@ -132,7 +132,15 @@ export default function DeviceConfiguration({
   // the grid, and the draft could not have been kept anyway.
   function leaveScreen(event: FocusEvent<HTMLElement>) {
     const next = event.relatedTarget;
-    if (!api || !next || event.currentTarget.contains(next)) return;
+    // Clicking content the browser cannot focus moves focus to an ancestor
+    // (the page's main region): that is still inside the screen.
+    if (
+      !api ||
+      !next ||
+      event.currentTarget.contains(next) ||
+      next.contains(event.currentTarget)
+    )
+      return;
     api.stopEditing();
     if (api.getEditingCells().length) api.stopEditing(true);
   }

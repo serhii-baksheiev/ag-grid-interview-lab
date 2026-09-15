@@ -374,10 +374,37 @@ test('cancels an invalid name editor when focus leaves the configuration screen'
 
   // Focus moves to a control outside the screen; the blocked draft is abandoned.
   await page.getByRole('button', { name: 'Use dark theme' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Use light theme' }),
+  ).toBeFocused();
   await expect(editor).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(
     page.getByRole('gridcell', { name: original, exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
+test('keeps an invalid name editor blocked when content inside the configuration screen is clicked', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  const original = generateDevices(1)[0]!.name;
+  await page.getByRole('gridcell', { name: original, exact: true }).dblclick();
+  const editor = page.getByRole('textbox', { name: 'Device name editor' });
+  await editor.fill(' ');
+  await page.keyboard.press('Enter');
+  await expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+  // The heading cannot take focus, so the browser focuses the page's main region.
+  await page
+    .getByRole('heading', { level: 1, name: 'Device Configuration' })
+    .click();
+  await expect(editor).toBeVisible();
+  await expect(editor).toHaveValue(' ');
   await expect(
     page.getByText('0 unsaved changes', { exact: true }),
   ).toBeVisible();
