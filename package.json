@@ -23,7 +23,8 @@
     "format:check": "prettier --check src e2e scripts docs/*.md docs/audits/REMEDIATION.md .github/workflows/ci.yml README.md package.json *.ts *.js index.html",
     "test": "vitest run && npm run test:benchmark",
     "test:unit": "vitest run --exclude '**/*.integration.test.tsx' && npm run test:benchmark",
-    "test:benchmark": "node --test scripts/require-abort.test.mjs",
+    "test:benchmark": "node --test scripts/require-abort.test.mjs scripts/bundle-budget.test.mjs",
+    "check:bundle": "node scripts/bundle-budget.mjs",
     "test:integration": "vitest run src/app",
     "test:e2e": "npm run build && npm run test:e2e:ci",
     "test:e2e:ci": "playwright test"

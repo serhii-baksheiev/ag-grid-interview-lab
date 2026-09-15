@@ -1,7 +1,11 @@
 import type { ColDef } from 'ag-grid-community';
 
-/** Persisted filter types this application restores; one per provided Community filter. */
-export type FilterType = 'text' | 'number' | 'date';
+/**
+ * Persisted filter types this application restores: one per provided Community
+ * filter, plus `boolean` for the text filter AG Grid gives a boolean column,
+ * whose models are text-typed `true`/`false`.
+ */
+export type FilterType = 'text' | 'number' | 'date' | 'boolean';
 export type FilterSchema = Readonly<Record<string, FilterType>>;
 
 // Prototype-free so a filter named like an Object method maps to nothing.
@@ -19,6 +23,7 @@ const defaultFilterByDataType: Record<string, FilterType> = Object.assign(
   Object.create(null),
   {
     number: 'number',
+    boolean: 'boolean',
     date: 'date',
     dateString: 'date',
     dateTime: 'date',
@@ -30,7 +35,8 @@ const defaultFilterByDataType: Record<string, FilterType> = Object.assign(
  * Derive a column id → filter type map from the column definitions a grid renders,
  * so persisted filter models are validated against the columns that exist rather
  * than a second hand-maintained list. `filter: true` follows the column's declared
- * `cellDataType` (number → number, date types → date, otherwise text); a column
+ * `cellDataType` (number → number, boolean → boolean, date types → date,
+ * otherwise text); a column
  * that relies on inferred data types must name its filter explicitly.
  */
 export function filterSchemaFor<T>(

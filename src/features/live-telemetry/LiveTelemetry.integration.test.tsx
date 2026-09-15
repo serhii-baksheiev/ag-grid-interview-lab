@@ -63,6 +63,15 @@ describe('Live Telemetry against a real AG Grid instance', () => {
       { timeout: 5000 },
     );
 
+    // At least one sampled Reading has drifted from its seeded value, so the
+    // post-reset check below actually proves a restore rather than a no-op.
+    const driftedBeforeReset = Array.from({ length: 5 }, (_, i) => i).some(
+      (i) =>
+        valueCellText(`device-${String(i + 1).padStart(5, '0')}`) !==
+        formatNumber(seeded[i]!.value),
+    );
+    expect(driftedBeforeReset).toBe(true);
+
     fireEvent.click(screen.getByRole('button', { name: 'Pause stream' }));
     fireEvent.click(screen.getByRole('button', { name: 'Reset data' }));
 

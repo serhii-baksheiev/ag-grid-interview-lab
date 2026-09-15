@@ -20,7 +20,7 @@ describe('filter schema derived from column definitions', () => {
       timestamp: 'date',
       status: 'text',
       delta: 'number',
-      enabled: 'text',
+      enabled: 'boolean',
     });
   });
 
@@ -40,7 +40,7 @@ describe('filter schema derived from column definitions', () => {
       count: 'number',
       when: 'date',
       day: 'date',
-      flag: 'text',
+      flag: 'boolean',
       label: 'text',
     });
   });

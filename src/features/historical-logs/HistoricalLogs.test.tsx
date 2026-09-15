@@ -12,6 +12,8 @@ const mocked = vi.hoisted(() => ({
     | {
         onGridReady?: (event: unknown) => void;
         onStateUpdated?: (event: unknown) => void;
+        getRowId?: unknown;
+        rowBuffer?: unknown;
       }
     | undefined,
 }));
@@ -76,6 +78,59 @@ describe('Historical Logs screen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('tells the user to clear filters when the current column filters cannot be applied to historical data', () => {
+    renderReadyHistory();
+    act(() =>
+      mocked.datasourceOptions?.onStatus({
+        pending: 0,
+        error: true,
+        failure: 'unsupported',
+        requests: [],
+      }),
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toMatch(
+      /current column filters.*cannot be applied to the historical data/i,
+    );
+    expect(alert.textContent).toMatch(/clear them|Reset State/i);
+    expect(alert.textContent).not.toContain('Disable error simulation');
+    // The screen-reader status names the same cause as the visible alert.
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((element) =>
+          /cannot be applied/i.test(element.textContent ?? ''),
+        ),
+    ).toBe(true);
+  });
+
+  it('keeps the request-failure message and Retry button for a simulated request failure', () => {
+    renderReadyHistory();
+    act(() =>
+      mocked.datasourceOptions?.onStatus({
+        pending: 0,
+        error: true,
+        failure: 'request',
+        requests: [],
+      }),
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain(
+      'Historical request failed. Disable error simulation and retry.',
+    );
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  it('gives the infinite grid no getRowId: nothing on this screen consumes row ids', () => {
+    renderReadyHistory();
+    expect(mocked.gridProps?.getRowId).toBeUndefined();
+  });
+
+  it('gives the infinite grid no rowBuffer override, leaving AG Grid default of 10', () => {
+    renderReadyHistory();
+    expect(mocked.gridProps?.rowBuffer).toBeUndefined();
+  });
+
   it('does not replace newer device typing with a non-filter state update', async () => {
     vi.useFakeTimers();
     const api = renderReadyHistory();
@@ -88,7 +143,13 @@ describe('Historical Logs screen', () => {
     fireEvent.change(input, { target: { value: 'device-00' } });
     await act(async () => vi.advanceTimersByTimeAsync(350));
     fireEvent.change(input, { target: { value: 'device-000' } });
-    act(() => mocked.gridProps?.onStateUpdated?.({ api, sources: ['scroll'] }));
+    act(() =>
+      mocked.gridProps?.onStateUpdated?.({
+        api,
+        sources: ['scroll'],
+        state: {},
+      }),
+    );
 
     expect(input).toHaveValue('device-000');
   });
@@ -111,7 +172,13 @@ describe('Historical Logs screen', () => {
     });
     const input = screen.getByPlaceholderText('device-00001');
     fireEvent.change(input, { target: { value: 'device-0001' } });
-    act(() => mocked.gridProps?.onStateUpdated?.({ api, sources: ['filter'] }));
+    act(() =>
+      mocked.gridProps?.onStateUpdated?.({
+        api,
+        sources: ['filter'],
+        state: {},
+      }),
+    );
     expect(input).toHaveValue('device-0001');
     await act(async () => vi.advanceTimersByTimeAsync(350));
     expect(api.setFilterModel).toHaveBeenLastCalledWith({

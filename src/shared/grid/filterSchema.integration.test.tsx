@@ -7,7 +7,7 @@ import { defaultColDef } from './base';
 import { filterSchemaFor, type FilterType } from './filterSchema';
 import { liveColumns } from '../../features/live-telemetry/columns';
 import { configurationColumns } from '../../features/device-configuration/columns';
-import { analyticsColumns } from '../../features/analytics/Analytics';
+import { analyticsColumns } from '../../features/analytics/columns';
 import { summarize } from '../../features/analytics/model';
 import {
   generateDevices,
@@ -22,7 +22,10 @@ const defaultFilterFor: Record<string, FilterType | undefined> = {
   false: 'text',
   undefined: 'text',
   text: 'text',
-  boolean: 'text',
+  // AG Grid's own default filter for a boolean-typed column still emits a
+  // text-typed 'true'/'false' filterModel; the schema tracks the intent as
+  // 'boolean' so restoration can restrict the accepted text filter types.
+  boolean: 'boolean',
   object: 'text',
   number: 'number',
   date: 'date',

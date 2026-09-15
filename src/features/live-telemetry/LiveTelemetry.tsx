@@ -7,6 +7,7 @@ import { useGridState } from '../../shared/grid/useGridState';
 import { ColumnControls } from '../../shared/grid/ColumnControls';
 import { filterSchemaFor } from '../../shared/grid/filterSchema';
 import { InfoPanel } from '../../shared/ui/InfoPanel';
+import { useDebouncedValue } from '../../shared/utils/useDebouncedValue';
 import { liveColumns } from './columns';
 import {
   ASYNC_TRANSACTION_WINDOW_MS,
@@ -15,6 +16,9 @@ import {
 } from './diagnostics';
 import { createTelemetrySource } from './source';
 const filterSchema = filterSchemaFor(liveColumns, defaultColDef);
+// filterParams.debounceMs covers column filters only; the external quick filter
+// text is debounced here so typing does not re-filter the fleet per keystroke.
+const QUICK_FILTER_DEBOUNCE_MS = 300;
 export default function LiveTelemetry() {
   const [count, setCount] = useState(1000);
   // The source owns the fleet; the grid receives its first snapshot, then transactions.
@@ -29,6 +33,10 @@ export default function LiveTelemetry() {
   const [changes, setChanges] = useState(100);
   const [burst, setBurst] = useState(false);
   const [search, setSearch] = useState('');
+  const [quickFilter, applyQuickFilter] = useDebouncedValue(
+    search,
+    QUICK_FILTER_DEBOUNCE_MS,
+  );
   const [showLocation, setShowLocation] = useState(true);
   const [metrics, setMetrics] = useState(() =>
     sampleDiagnostics(createCounters(), createCounters(), 0),
@@ -245,6 +253,7 @@ export default function LiveTelemetry() {
               if (api) {
                 state.resetState(api);
                 setSearch('');
+                applyQuickFilter('');
                 setShowLocation(true);
               }
             }}
@@ -259,7 +268,10 @@ export default function LiveTelemetry() {
             columnDefs={liveColumns}
             defaultColDef={defaultColDef}
             getRowId={getRowId}
-            quickFilterText={search}
+            quickFilterText={quickFilter}
+            // Rows keep their quick-filter text until their data changes, which
+            // transactions reset per updated row.
+            cacheQuickFilter
             asyncTransactionWaitMillis={ASYNC_TRANSACTION_WINDOW_MS}
             onAsyncTransactionsFlushed={() => {
               counters.current.batches++;
