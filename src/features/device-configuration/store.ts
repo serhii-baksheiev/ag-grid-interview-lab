@@ -46,7 +46,7 @@ export interface ConfigurationStore {
   dispose: () => void;
 }
 
-export const INVALID_SAVE_MESSAGE = 'Correct invalid values before saving.';
+const INVALID_SAVE_MESSAGE = 'Correct invalid values before saving.';
 const DEFAULT_FLEET_SIZE = 100;
 const SAVE_DELAY_MS = 450;
 const FIRST_NEW_ID = 101;
@@ -73,12 +73,18 @@ export function createConfigurationStore(
   let nextId = FIRST_NEW_ID;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
+  let dirtyRows: readonly Device[] = [];
   let snapshot = build();
 
   function build(): ConfigurationSnapshot {
-    const dirtyRows = drafts.filter((row) =>
-      isDirty(row, baseline.get(row.id)),
-    );
+    const dirty = drafts.filter((row) => isDirty(row, baseline.get(row.id)));
+    // Kept while the same rows stay dirty, so anything keyed on it (the grid's
+    // row class rules) is rebuilt only when the dirty set changes.
+    if (
+      dirty.length !== dirtyRows.length ||
+      dirty.some((row, index) => row !== dirtyRows[index])
+    )
+      dirtyRows = dirty;
     const deletedRows = saved.filter((row) => !draftIndex.has(row.id));
     return {
       drafts,

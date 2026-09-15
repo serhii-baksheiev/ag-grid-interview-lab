@@ -540,3 +540,29 @@ describe('createConfigurationStore: isNew', () => {
     expect(store.isNew('device-00101')).toBe(false);
   });
 });
+
+describe('createConfigurationStore: dirtyRows identity', () => {
+  it('keeps the dirtyRows array while the set of dirty rows is unchanged', () => {
+    const store = createConfigurationStore({ devices: fleet(2) });
+    const [first] = store.getSnapshot().drafts;
+    store.edit(first!.id, 'location', 'Changed');
+    const dirty = store.getSnapshot().dirtyRows;
+    store.setFailSave(true);
+    expect(store.getSnapshot().dirtyRows).toBe(dirty);
+    store.edit(first!.id, 'location', 'Changed again');
+    expect(store.getSnapshot().dirtyRows).toBe(dirty);
+  });
+
+  it('replaces the dirtyRows array when a row becomes dirty or clean again', () => {
+    const store = createConfigurationStore({ devices: fleet(2) });
+    const [first] = store.getSnapshot().drafts;
+    const original = first!.location;
+    const clean = store.getSnapshot().dirtyRows;
+    store.edit(first!.id, 'location', 'Changed');
+    const dirty = store.getSnapshot().dirtyRows;
+    expect(dirty).not.toBe(clean);
+    store.edit(first!.id, 'location', original);
+    expect(store.getSnapshot().dirtyRows).not.toBe(dirty);
+    expect(store.getSnapshot().dirtyRows).toEqual([]);
+  });
+});
