@@ -69,12 +69,12 @@ export function createHistoryDatasource(options: {
         // not land rows or clear this failure.
         signature = '';
         generation++;
+        failed = true;
+        failure = 'unsupported';
+        matchedTotal = undefined;
         cancelAll();
         controller = new AbortController();
         index = undefined;
-        matchedTotal = undefined;
-        failed = true;
-        failure = 'unsupported';
         try {
           params.failCallback();
         } finally {
