@@ -435,6 +435,67 @@ test('saves a selected new row into the baseline without losing other rows or dr
   ).toBeVisible();
 });
 
+// AGL-3: a configuration draft is owned by the store and survives the screen
+// unmounting on navigation, but native cell Undo/Redo history belongs to the
+// grid instance itself and resets when that instance is torn down and rebuilt.
+test('keeps a renamed draft across navigation, but native cell Undo resets once the grid remounts', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  await visibleGrid(page);
+  await renameFirstDevice(page, 'Survives navigation');
+  await expect(
+    page.getByText('1 unsaved changes', { exact: true }),
+  ).toBeVisible();
+
+  await openView(page, 'Analytics');
+  await openView(page, 'Device Configuration');
+  await expect(
+    page.getByRole('gridcell', { name: 'Survives navigation', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('1 unsaved changes', { exact: true }),
+  ).toBeVisible();
+
+  // Today the screen never truly unmounts, so the grid instance (and its
+  // native undo history recorded before navigating away) is still the same
+  // one: Undo actually reverts the rename. Once the screen remounts for
+  // real, this history resets with it and Undo becomes a no-op here — the
+  // draft itself is unaffected either way, because the store owns it.
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(
+    page.getByRole('gridcell', { name: 'Survives navigation', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('1 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
+test('reverts a draft that survived navigation back to its original value', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await openView(page, 'Device Configuration');
+  await visibleGrid(page);
+  const original = generateDevices(1)[0]!.name;
+  await renameFirstDevice(page, 'Survives navigation');
+
+  await openView(page, 'Analytics');
+  await openView(page, 'Device Configuration');
+  await expect(
+    page.getByRole('gridcell', { name: 'Survives navigation', exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Revert all', exact: true }).click();
+  await expect(
+    page.getByRole('gridcell', { name: original, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('0 unsaved changes', { exact: true }),
+  ).toBeVisible();
+});
+
 test('keeps the Columns checkboxes in step with the grid after Reset State', async ({
   page,
 }) => {

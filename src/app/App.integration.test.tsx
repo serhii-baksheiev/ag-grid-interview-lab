@@ -350,3 +350,175 @@ describe('invalid threshold and sampling commits', () => {
     expect(screen.getByRole('spinbutton')).toBe(editor);
   });
 });
+
+// AGL-3: the configuration store owns drafts, baseline, errors and save state
+// outside React, so the screen itself can unmount for real instead of staying
+// mounted-but-hidden forever just to avoid losing in-memory drafts.
+describe('configuration store ownership survives unmounting the screen', () => {
+  it('fully unmounts the configuration grid when navigating away, and restores the draft and dirty count from the store on return', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add device' }));
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Live Telemetry' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Live Telemetry' }),
+    ).toBeInTheDocument();
+    // `{ hidden: true }` also matches an element merely hidden by an
+    // ancestor's `hidden` attribute, so this only passes once the screen is
+    // truly removed from the document rather than kept mounted-but-hidden.
+    expect(
+      screen.queryByRole('grid', {
+        name: 'Device configuration grid',
+        hidden: true,
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    expect(
+      await screen.findByRole('gridcell', { name: 'New sensor 101' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('completes a save started on Configuration while the user has navigated to another screen', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add device' }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Saving changes…');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Live Telemetry' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(450);
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    expect(
+      screen.getByText('Saved successfully', { exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('0 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps native cell Undo/Redo working with store-owned draft rows', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = generateDevices(1)[0]!;
+    const cell = await screen.findByRole('gridcell', { name: original.name });
+    fireEvent.click(cell);
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    const editor = await screen.findByRole('textbox', {
+      name: 'Device name editor',
+    });
+    fireEvent.change(editor, { target: { value: 'Renamed via store' } });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(
+      await screen.findByRole('gridcell', { name: 'Renamed via store' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(
+      await screen.findByRole('gridcell', { name: original.name }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('0 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(
+      await screen.findByRole('gridcell', { name: 'Renamed via store' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('1 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the unsaved-changes warning active while Configuration is unmounted, and drops it after a revert', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Add device' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Live Telemetry' }));
+    await screen.findByRole('heading', { name: 'Live Telemetry' });
+
+    const warn = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(warn);
+    expect(warn.defaultPrevented).toBe(true);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    await screen.findByRole('gridcell', { name: 'New sensor 101' });
+    fireEvent.click(screen.getByRole('button', { name: 'Revert all' }));
+    expect(
+      screen.getByText('0 unsaved changes', { exact: true }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Live Telemetry' }));
+    await screen.findByRole('heading', { name: 'Live Telemetry' });
+
+    const clear = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clear);
+    expect(clear.defaultPrevented).toBe(false);
+  });
+
+  it('frees Save after Escape abandons an invalid open editor', async () => {
+    render(<App />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Device Configuration' }),
+    );
+    const original = generateDevices(1)[0]!;
+    await screen.findByRole('gridcell', { name: original.name });
+    fireEvent.click(screen.getByRole('button', { name: 'Add device' }));
+    const cell = document.querySelector(
+      "[row-id='device-00001'] [col-id='warningThreshold']",
+    );
+    fireEvent.click(cell!);
+    fireEvent.keyDown(cell!, { key: 'Enter' });
+    const editor = await screen.findByRole('spinbutton');
+    fireEvent.input(editor, {
+      target: { value: String(original.criticalThreshold + 1) },
+    });
+    fireEvent.keyDown(editor, { key: 'Enter' });
+    expect(editor).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Correct invalid values before saving.',
+    );
+
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    // AG Grid's own Escape handler cancels the edit on a real setTimeout(0),
+    // not synchronously, so the next tick has to run before it takes effect.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Save all' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Saving changes…');
+  });
+});
